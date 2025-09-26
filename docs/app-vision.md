@@ -1,52 +1,36 @@
 # Name
 
-- The app is called TeamTime.
+- The app is called Homeslice.
 
 # Users
 
-- Users are software development teams who do mob programming with drivers and navigators.
+- Users are roommates who are deciding how to select rooms and split rent between themselves.
 
 # Value proposition
 
-An easy to use rotation timer for managing and tracking mob programming sessions.
+An easy to use room pricer and sorter that solves room selection disputes fairly and quickly.
 
 # Key features
 
-Simple mobile-friendly one-screen design with the app name at the top, and below it:
-  - large countdown timer, defaulting to 10 minutes, but adjustable at the start of each session,
-  - a single start/pause buttonm
-  - the team members, shuffled at the start of each session, with the first name highlighted
-Simple operations:
-  - Tap a name to skip or include that team member in the rotation.
-  - Tap start to start the timer, tap again to pause it.
-  - When one minute is left, timer beeps and starts flashing.
-  - When time is up, timer sounds an alarm, resets time, rotates to the next team member, and waits for start.
-Recording-keeping:
-  - At end of each turn, the app logs to the console the current time, rotation duration setting, the driver, and the navigators.
+- One by one each room is presented, and roommates can bid the monthly rent they would be willing to pay.
+- The screen displays the room, the current price (monthly rent) and then a bid button which allows the user to enter their own custom bid (rejected if below current bid or above total monthly constraint), or just add $10 to the current bid.
+- There is a 30 second timer which is reset every time a bid is placed. When the timer runs out (meaning no user wants to outbid the current bid), the room is awarded to the highest bidder, and they can no longer bid on other rooms.
+- Each room is subsequently auctioned off until there is one room remaining, where it is assigned to the last roommate and their rent is determined by the remaining portion of the total monthly rent that is not paid through the other rooms.
 
 # Example scenario
 
 Here is an example session.
 
-- Alice, Bob, Cathy, and Dave are a team of developers.
-- Alice, Cathy, and Dave meet to do mob programming for 90 minutes.
-- Alice starts the app on her phone. 
-- It shows a countdown timer, set to 10 minutes, a start button, and a shuffled list of team member names with checkmarks.
-- The first name is highlighted. It happens to be Bob.
-- Alice taps Bob's nam because he is not there. The highlight moves to Dave.
-- Dave sits at the keyboard and starts the timer. He begins entering code suggested by the other team members. 
-- Pizza arrives, so Dave stops the timer and grabs a slice. After a few minutes, he starts the timer to continue his turn.
-- A beep at 9 minutes warns the team is almost time to rotate.
-- Whem time goes to zero, an alarm sounds. Dave stops. The highlight moves to Cathy
-- Cathy taps the start button to begin her turn.
-
-# Coding notes
-
-- Use setInterval() to implement the timer.
-- Use AudioContext to play sounds.
-- Define and import a MockAudioContext class for unit testing sounds. 
+- Alice, Bob, & Cathy are planning to move into a 3 person house, which has bedrooms of varying size and layouts, their total monthly rent is $3000.
+- Some bedrooms are more desirable than others, resulting in potential conflict regarding how to fairly decide who gets each room.
+- They all log onto Homeslice, and register to be in the same splitting group.
+- The to-be tenants enter the details for each bedroom (including an image, square feet, and appliances), as well as the total monthly rent they owe for the whole house.
+- The tenants are initially presented with each room and are allowed to choose which one they prefer.
+- The biggest room is auctioned off first, Alice really wants this room and has a big budget so she places a bid of $1500, which no one outbids and so she is assigned that room.
+- Bob and Cathy both really want the second room, Bob starts the bidding at $700 and then they repeatedly outbid each other by 10$ until Cathy ultimately wins with a bid of $900.
+- The 3rd room is automatically assigned to Cathy for the remaining $600 of monthly rent.
 
 # Testing notes
-- Define unit tests for skipping team members in the rotation.
-- Define unit tests for when Start and Stop should appear.
-- Define unit tests for when sounds should happen.
+- Define unit tests for highest bidder winning.
+- Define unit tests to check for duplicate room assignments (make sure each roommate is assigned to one room).
+- Define unit tests for all rooms adding up to total rent.
