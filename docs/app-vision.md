@@ -12,23 +12,50 @@ An easy to use room pricer and sorter that solves room selection disputes fairly
 
 # Key features
 
-- One by one each room is presented, and roommates can bid the monthly rent they would be willing to pay.
-- The screen displays the room, the current price (monthly rent) and then a bid button which allows the user to enter their own custom bid (rejected if below current bid or above total monthly constraint), or just add \$10 to the current bid.
-- There is a 30 second timer which is reset every time a bid is placed. When the timer runs out (meaning no user wants to outbid the current bid), the room is awarded to the highest bidder, and they can no longer bid on other rooms.
-- Each room is subsequently auctioned off until there is one room remaining, where it is assigned to the last roommate and their rent is determined by the remaining portion of the total monthly rent that is not paid through the other rooms.
+- A roommate creates a new “Room Auction” by entering:
+  - Total rent for the apartment/house.
+  - Number of rooms.
+  - Room names (e.g., Bedroom A, B, C).
+- The app generates a join link that the other roommates can use to enter the same auction.
+- Each room is auctioned one at a time in rounds until all rooms are assigned.
+- The current room being auctioned is displayed with:
+  - A photo (optional), name, and current highest bid.
+  - A countdown timer (default 30 seconds).
+  - Buttons to “raise bid by $10” or “enter custom bid.”
+- Users can place a bid as long as:
+  - It is higher than the current highest bid.
+  - Their total committed bids across all rooms do not exceed the total monthly rent.
+- When the timer runs out without a new bid:
+  - The room is awarded to the highest bidder.
+  - That roommate is removed from bidding for the remaining rooms.
+- The process repeats for the next room.
+- The final room is automatically assigned to the last unassigned roommate, with rent determined by the remaining balance of total rent.
 
 # Example scenario
 
 Here is an example session.
 
-- Alice, Bob, & Cathy are planning to move into a 3 person house, which has bedrooms of varying size and layouts, their total monthly rent is \$3000.
-- Some bedrooms are more desirable than others, resulting in potential conflict regarding how to fairly decide who gets each room.
-- They all log onto Homeslice, and register to be in the same splitting group.
-- The to-be tenants enter the details for each bedroom (including an image, square feet, and appliances), as well as the total monthly rent they owe for the whole house.
-- The tenants are initially presented with each room and are allowed to choose which one they prefer.
-- The biggest room is auctioned off first, Alice really wants this room and has a big budget so she places a bid of \$1500, which no one outbids and so she is assigned that room.
-- Bob and Cathy both really want the second room, Bob starts the bidding at \$700 and then they repeatedly outbid each other by \$10 until Cathy ultimately wins with a bid of \$900.
-- The 3rd room is automatically assigned to Cathy for the remaining \$600 of monthly rent.
+- Alice, Bob, and Cathy are moving into a 3-person apartment with a total rent of $3000.
+- Alice creates a “Room Auction” in Homeslice, enters the total rent ($3000), and labels the rooms A, B, and C.
+- She sends the join link to Bob and Cathy. All three join from their phones.
+- Round 1: Room A (the biggest) is shown.
+  - Starting price: $0.
+  - Alice bids $1000. The app updates the highest bid and resets the 30s timer.
+  - Bob raises to $1200. Timer resets.
+  - Alice bids $1500. Timer runs out with no more bids.
+  - Room A is assigned to Alice at $1500.
+- Round 2: Room B is shown.
+  - Bob opens with $700. Timer resets.
+  - Cathy raises to $800, then Bob raises to $850, then Cathy raises to $900.
+  - Timer runs out. Cathy wins Room B at $900.
+- Round 3: Only Room C remains.
+  - It is automatically assigned to Bob.
+  - His rent is calculated as the remaining balance: $3000 – ($1500 + $900) = $600.
+- Final assignment:
+  - Alice: Room A at $1500
+  - Cathy: Room B at $900
+  - Bob: Room C at $600
+- All roommates can see their assigned rooms and rents in the summary screen.
 
 # Testing notes
 - Define unit tests for highest bidder winning.
