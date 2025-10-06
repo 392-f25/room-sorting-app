@@ -8,10 +8,10 @@ type CreateData = {
 };
 
 export const AuctionCreator = ({ onCreate }: PropsWithChildren<{ onCreate: (data: CreateData) => void }>) => {
-  const [totalRent, setTotalRent] = useState<number>(3000);
-  const [count, setCount] = useState<number>(3);
-  const [roomNames, setRoomNames] = useState<string[]>(['A', 'B', 'C']);
-  const [userNames, setUserNames] = useState<string[]>(['Alice', 'Bob', 'Cathy']);
+  const [totalRent, setTotalRent] = useState<number>(0);
+  const [count, setCount] = useState<number>(0);
+  const [roomNames, setRoomNames] = useState<string[]>(['Room 1', 'Room 2']);
+  const [userNames, setUserNames] = useState<string[]>(['', '']);
 
   // Keep arrays in sync with count
   useEffect(() => {
@@ -22,7 +22,7 @@ export const AuctionCreator = ({ onCreate }: PropsWithChildren<{ onCreate: (data
     });
     setUserNames(prev => {
       const next = prev.slice(0, count);
-      while (next.length < count) next.push(`User ${next.length + 1}`);
+      while (next.length < count) next.push(`${next.length + 1}`);
       return next;
     });
   }, [count]);
@@ -55,7 +55,7 @@ export const AuctionCreator = ({ onCreate }: PropsWithChildren<{ onCreate: (data
       <input className='w-full mb-4 p-2 border rounded' value={totalRent} onChange={(e) => setTotalRent(Number(e.target.value))} />
 
       <label className='block mb-2'>Number of Rooms / Users</label>
-      <input className='w-24 mb-4 p-2 border rounded' type='number' min={1} max={10} value={count} onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))} />
+      <input className='w-24 mb-4 p-2 border rounded' type='number' min={1} max={10} value={count} onChange={(e) => setCount(Math.max(0, Number(e.target.value) || 0))} />
 
       <div className='grid grid-cols-1 md:grid-cols-2 gap-4 mb-4'>
         <div>
