@@ -1,6 +1,6 @@
-import { ref, push, set } from 'firebase/database';
+import { ref, push, update } from 'firebase/database';
 import { db } from './firebaseConfig';
-import type { Auction, CreateData, Room, User } from '../types/index';
+import type { Auction, Room, User } from '../types/index';
 
 /**
  * Creates and initializes a new Auction object from raw form data.
@@ -169,25 +169,64 @@ export const applySelections = (auction: Auction, selections: Record<string, str
 };
 
 /**
- * Saves the initial auction data to the Firebase Realtime Database.
+ * Creates and saves a new auction to the Firebase Realtime Database according to the MVP schema.
+ * This is an atomic, multi-path update that initializes the auction across
+ * `/auctionJoinCodes`, `/auctionDetails`, and `/auctionState`.
  * @param auctionData The raw data from the creation form.
- * @returns A promise that resolves with the unique key (ID) of the newly created auction, or null if an error occurred.
+ * @returns A promise that resolves with an object containing the new `auctionId` and `joinCode`.
  */
-export const saveAuction = async (auctionData: CreateData) => {
+export const saveAuction = async (auctionData: { totalRent: number; rooms: string[]; users: string[] }) => {
+  const { totalRent, rooms: roomNames, users: userNames } = auctionData;
+
+  // 1. Generate a unique auction ID and a human-friendly join code
+  const auctionId = push(ref(db, 'auctionDetails')).key;
+  if (!auctionId) {
+    throw new Error("Failed to generate a new auction ID.");
+  }
+  const joinCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+  // 2. Prepare the data for the multi-path update
+  const updates: Record<string, unknown> = {};
+
+  // Path 1: The join code index
+  updates[`/auctionJoinCodes/${joinCode}`] = auctionId;
+
+  // Path 2: The main auction details
+  const rooms = roomNames.reduce((acc, name, i) => {
+    const roomId = `room${i + 1}`;
+    acc[roomId] = { name, basePrice: Number((totalRent / roomNames.length).toFixed(2)) };
+    return acc;
+  }, {} as Record<string, { name: string; basePrice: number }>);
+
+  const users = userNames.reduce((acc, name, i) => {
+    const userId = `user${i + 1}`;
+    acc[userId] = { name };
+    return acc;
+  }, {} as Record<string, { name: string }>);
+
+  updates[`/auctionDetails/${auctionId}`] = {
+    totalRent,
+    status: 'active',
+    rooms,
+    users,
+  };
+
+  // Path 3: The initial state of assignments for all rooms
+  const initialAssignments = Object.keys(rooms).reduce((acc, roomId) => {
+    acc[roomId] = { userId: null, price: rooms[roomId].basePrice };
+    return acc;
+  }, {} as Record<string, { userId: string | null; price: number }>);
+
+  updates[`/auctionState/${auctionId}`] = {
+    assignments: initialAssignments,
+  };
+
+  // 3. Perform the atomic update
   try {
-    // Create a reference to the 'auctions' list in database
-    const auctionsRef = ref(db, 'auctions');
-    
-    // Create a new, unique entry in the 'auctions' list
-    const newAuctionRef = push(auctionsRef);
-    
-    // Write the auction data to that new entry
-    await set(newAuctionRef, auctionData);
-    
-    // Return the unique key (ID) of the newly created auction
-    return newAuctionRef.key;
+    await update(ref(db), updates);
+    return { auctionId, joinCode }; // Return both the ID and the code
   } catch (error) {
-    console.error("Error saving auction to Firebase:", error);
-    throw error; // Re-throw the error to be handled by the caller
+    console.error("Error saving new auction with multi-path update:", error);
+    throw error;
   }
 };

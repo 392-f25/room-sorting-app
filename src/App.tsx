@@ -9,10 +9,10 @@ export default function App() {
 
   const handleCreateAuction = async (data: CreateData) => {
     try {
-      const newAuctionId = await saveAuction(data);
-      if (newAuctionId) {
+      const {auctionId, joinCode} = await saveAuction(data);
+      if (auctionId) {
         const localAuction = initAuction(
-          newAuctionId,
+          auctionId,
           data.totalRent,
           data.rooms,
           data.users
