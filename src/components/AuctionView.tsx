@@ -6,12 +6,24 @@ export const AuctionView = ({ auction: initialAuction }: { auction: Auction }) =
   const [auction, setAuction] = useState(initialAuction);
   const [selections, setSelections] = useState<Record<string, string | null>>(() => Object.fromEntries(initialAuction.users.map(u => [u.id, null])));
   const [phase, setPhase] = useState<'select' | 'bid' | 'done'>('select');
+  const [selectIndex, setSelectIndex] = useState(0); // stepper for privacy
   const [conflictingRoomIds, setConflictingRoomIds] = useState<string[]>([]);
   const [currentBids, setCurrentBids] = useState<Record<string, { userId: string; amount: number; submitted?: boolean }[]>>({});
   const [bidInputs, setBidInputs] = useState<Record<string, number>>({});
   const [tieWarnings, setTieWarnings] = useState<Record<string, string | null>>({});
 
   const conflicts = useMemo(() => detectConflicts(auction, selections), [auction, selections]);
+  const currentUser = auction.users[selectIndex];
+
+  // Stepper for private selection
+  const handleSelectRoom = () => {
+    if (!selections[currentUser.id]) return;
+    if (selectIndex < auction.users.length - 1) {
+      setSelectIndex(selectIndex + 1);
+    } else {
+      startResolve();
+    }
+  };
 
   const startResolve = () => {
     const c = conflicts.conflicts;
@@ -23,9 +35,11 @@ export const AuctionView = ({ auction: initialAuction }: { auction: Auction }) =
       if (allAssigned) setPhase('done');
       else {
         // reset selections for next round (only unassigned users choose)
+        setSelectIndex(0);
         const nextSel: Record<string, string | null> = {};
         for (const u of applied.users) nextSel[u.id] = u.assignedRoomId ? null : null;
         setSelections(nextSel);
+        setPhase('select');
       }
       return;
     }
@@ -37,14 +51,12 @@ export const AuctionView = ({ auction: initialAuction }: { auction: Auction }) =
       bidsInit[roomId] = conflicts.roomToUsers[roomId].map((uid: string) => ({ userId: uid, amount: 0 }));
     }
     setCurrentBids(bidsInit);
-    // Clear bid inputs for prior assignees so they must reenter values
     setBidInputs(prev => {
       const copy = { ...prev };
       for (const roomId of c) {
         const room = auction.rooms.find(r => r.id === roomId);
         for (const uid of conflicts.roomToUsers[roomId]) {
           const key = `${roomId}:${uid}`;
-          // if the user was the previously assigned user for this room, clear their input
           if (room?.assignedUserId === uid) delete copy[key];
         }
       }
@@ -129,35 +141,27 @@ export const AuctionView = ({ auction: initialAuction }: { auction: Auction }) =
 
       {phase === 'select' && (
         <div>
-          <h3 className='font-semibold mb-2'>Select your preferred room</h3>
-          <div className='space-y-4'>
-            {auction.users.map(user => (
-              <div key={user.id} className='flex items-center gap-3'>
-                <div className='w-28'>{user.name}</div>
-                {user.assignedRoomId ? (
-                  // User already assigned: show assigned room and do not allow re-selection
-                  <div className='p-2 border rounded bg-slate-100'>
-                    {auction.rooms.find(r => r.id === user.assignedRoomId)?.name} (${(auction.rooms.find(r => r.id === user.assignedRoomId)?.price ?? 0).toFixed(2)})
-                  </div>
-                ) : (
-                  <select
-                    className='p-2 border rounded'
-                    value={selections[user.id] ?? ''}
-                    onChange={(e) => setSelections(prev => ({ ...prev, [user.id]: e.target.value || null }))}
-                  >
-                    <option value=''>-- choose --</option>
-                    {auction.rooms.map(r => (
-                      <option key={r.id} value={r.id}>{r.name} (${r.price.toFixed(2)})</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            ))}
+          <h3 className='font-semibold mb-2'>Room Selection (Private)</h3>
+          <div className='mb-4'>
+            <div className='font-semibold mb-2'>User: {currentUser.name}</div>
+            <select
+              className='w-full p-2 border rounded'
+              value={selections[currentUser.id] ?? ''}
+              onChange={e => setSelections(prev => ({ ...prev, [currentUser.id]: e.target.value }))}
+            >
+              <option value=''>Select a room</option>
+              {auction.rooms.map(r => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
           </div>
-          <div className='mt-4'>
-            <button className='bg-green-600 text-white px-4 py-2 rounded' onClick={startResolve}>Submit Selections</button>
-          </div>
-          <div className='mt-4 text-sm text-slate-600'>Conflicts detected: {conflicts.conflicts.length}</div>
+          <button
+            className='bg-blue-600 text-white px-4 py-2 rounded'
+            disabled={!selections[currentUser.id]}
+            onClick={handleSelectRoom}
+          >
+            {selectIndex < auction.users.length - 1 ? 'Next User' : 'Submit All Selections'}
+          </button>
         </div>
       )}
 
