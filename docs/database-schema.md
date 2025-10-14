@@ -8,7 +8,6 @@ This document outlines the simplified MVP data structure for the auction applica
 
 ```json
 {
-  "auctionJoinCodes": {},
   "auctionDetails": {},
   "bids": {},
   "auctionState": {}
@@ -17,23 +16,7 @@ This document outlines the simplified MVP data structure for the auction applica
 
 ---
 
-## 1. `/auctionJoinCodes`
-
-This collection serves as an index to map short, human-friendly join codes to their corresponding unique auction IDs. This is essential for allowing users to easily join an auction.
-
-**Path**: `/auctionJoinCodes/{joinCode}`
-
-**Schema**:
-```json
-{
-  "A4BC8E": "auctionId_1",
-  "F9G2K1": "auctionId_2"
-}
-```
-
----
-
-## 2. `/auctionDetails`
+## 1. `/auctionDetails`
 
 Stores all the setup and metadata for a specific auction in a single location. For an MVP, this is simpler than splitting auction data across multiple collections.
 
@@ -65,7 +48,7 @@ Stores all the setup and metadata for a specific auction in a single location. F
 
 ---
 
-## 3. `/bids`
+## 2. `/bids`
 
 Stores all bids for all auctions. This path is expected to receive frequent writes during an active auction. This remains essential for the MVP.
 
@@ -85,7 +68,7 @@ Stores all bids for all auctions. This path is expected to receive frequent writ
 
 ---
 
-## 4. `/auctionState`
+## 3. `/auctionState`
 
 Stores the live results and current state of an auction. The `assignments` object is created along with the auction and contains an entry for every room. This provides an explicit representation of each room's state (assigned or unassigned) at all times.
 
@@ -124,14 +107,11 @@ The database is an empty object.
 
 ### Step 1: Alice Creates the Auction
 
-Alice submits the "Create Auction" form. The `saveAuction` function generates a join code, an auction ID, and creates the initial state for the auction across all relevant collections. Note that `/auctionState/assignments` is now created at the beginning with all rooms initialized.
+Alice submits the "Create Auction" form. The `saveAuction` function generates an auction ID, and creates the initial state for the auction across all relevant collections. Note that `/auctionState/assignments` is created at the beginning with all rooms initialized.
 
 **Database State:**
 ```json
 {
-  "auctionJoinCodes": {
-    "A4BC8E": "auctionId_1"
-  },
   "auctionDetails": {
     "auctionId_1": {
       "totalRent": 2000,
@@ -215,7 +195,6 @@ Bob is assigned the last room. The app updates the final assignment and changes 
 **Final Database State:**
 ```json
 {
-  "auctionJoinCodes": { ... },
   "auctionDetails": {
     "auctionId_1": {
       "status": "closed", // Status is updated
