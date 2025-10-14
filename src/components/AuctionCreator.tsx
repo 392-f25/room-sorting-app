@@ -1,11 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PropsWithChildren } from 'react';
-
-type CreateData = {
-  totalRent: number;
-  rooms: string[];
-  users: string[];
-};
+import type { CreateData } from '../types';
 
 export const AuctionCreator = ({ onCreate }: PropsWithChildren<{ onCreate: (data: CreateData) => void }>) => {
   const [totalRent, setTotalRent] = useState<number>(0);

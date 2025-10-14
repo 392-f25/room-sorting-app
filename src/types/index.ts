@@ -19,3 +19,10 @@ export type Auction = {
   users: User[];
   rooms: Room[];
 };
+
+// The object produced by AuctionCreator component upon form submission
+export type CreateData = {
+  totalRent: number;
+  rooms: string[];
+  users: string[];
+};
