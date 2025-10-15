@@ -9,7 +9,7 @@ export default function App() {
 
   const handleCreateAuction = async (data: CreateData) => {
     try {
-      const {auctionId, joinCode} = await saveAuction(data);
+      const auctionId = await saveAuction(data);
       if (auctionId) {
         const localAuction = initAuction(
           auctionId,

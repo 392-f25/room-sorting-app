@@ -178,20 +178,16 @@ export const applySelections = (auction: Auction, selections: Record<string, str
 export const saveAuction = async (auctionData: { totalRent: number; rooms: string[]; users: string[] }) => {
   const { totalRent, rooms: roomNames, users: userNames } = auctionData;
 
-  // 1. Generate a unique auction ID and a human-friendly join code
+  // 1. Generate a unique auction ID
   const auctionId = push(ref(db, 'auctionDetails')).key;
   if (!auctionId) {
     throw new Error("Failed to generate a new auction ID.");
   }
-  const joinCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
   // 2. Prepare the data for the multi-path update
   const updates: Record<string, unknown> = {};
 
-  // Path 1: The join code index
-  updates[`/auctionJoinCodes/${joinCode}`] = auctionId;
-
-  // Path 2: The main auction details
+  // The main auction details
   const rooms = roomNames.reduce((acc, name, i) => {
     const roomId = `room${i + 1}`;
     acc[roomId] = { name, basePrice: Number((totalRent / roomNames.length).toFixed(2)) };
@@ -224,7 +220,7 @@ export const saveAuction = async (auctionData: { totalRent: number; rooms: strin
   // 3. Perform the atomic update
   try {
     await update(ref(db), updates);
-    return { auctionId, joinCode }; // Return both the ID and the code
+    return auctionId; // Return both the ID and the code
   } catch (error) {
     console.error("Error saving new auction with multi-path update:", error);
     throw error;
