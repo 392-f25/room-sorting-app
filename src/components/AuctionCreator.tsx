@@ -4,7 +4,7 @@ import type { CreateData } from '../types';
 
 // The `users` property is no longer needed at creation time.
 export const AuctionCreator = ({ onCreate }: PropsWithChildren<{ onCreate: (data: Omit<CreateData, 'users'>) => void }>) => {
-  const [totalRent, setTotalRent] = useState<string>('1000');
+  const [totalRent, setTotalRent] = useState<string>('0');
   const [count, setCount] = useState<string>('2');
   const [roomNames, setRoomNames] = useState<string[]>(['Room 1', 'Room 2']);
   const [errors, setErrors] = useState<string | null>(null);
