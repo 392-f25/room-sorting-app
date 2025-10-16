@@ -200,8 +200,9 @@ function computeResults(r) {
   return results
 }
 
-app.post('/api/room/compute/:code',async(req, res) => {
-  const r = rooms[req.params.code]
+app.post('/api/room/compute/:code', async (req, res) => {
+  const code = req.params.code
+  const r = rooms[code]
   if (!r) return res.status(404).json({ error: 'not found' })
 
   // If the caller posted an `info` object (submissions, preferences, totals, etc.), merge it
@@ -210,6 +211,13 @@ app.post('/api/room/compute/:code',async(req, res) => {
   try {
     const postedInfo = req.body && req.body.info ? req.body.info : null
     if (postedInfo && typeof postedInfo === 'object') {
+      // Log a compact summary of what the host sent so we can verify on server console
+      console.log(`[compute:${req.params.code}] received posted info summary:`, {
+        submissionsKeys: Object.keys((postedInfo.submissions || {})),
+        preferencesPresent: !!postedInfo.preferences,
+        roomNames: Array.isArray(postedInfo.roomNames) ? postedInfo.roomNames : undefined,
+        totalRent: postedInfo.totalRent
+      })
       r.info = { ...(r.info || {}), ...(postedInfo || {}) }
     }
   } catch (e) {

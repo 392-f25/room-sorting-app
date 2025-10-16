@@ -6,12 +6,10 @@ type Props = { code: string, userId?: string, onShowResults?: () => void }
 export default function AlreadySubmitted({ code, userId, onShowResults }: Props) {
   const [submissions, setSubmissions] = useState<any>({})
   const [usersCount, setUsersCount] = useState<number>(0)
-  const [isComputing, setIsComputing] = useState(false)
-  const [resultsReady, setResultsReady] = useState(false)
   const [stickyComputing, setStickyComputing] = useState(false)
-  const [modalVisible, setModalVisible] = useState(false)
   const [navigatedToResults, setNavigatedToResults] = useState(false)
   const [hostId, setHostId] = useState<string | undefined>(undefined)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
 
   async function refresh() {
     // show local data immediately for snappy UI
@@ -20,11 +18,12 @@ export default function AlreadySubmitted({ code, userId, onShowResults }: Props)
       if (local) {
         setUsersCount(local.users.length)
         setSubmissions(local.info?.submissions || {})
-        const localComputing = !!local.info?._computing
-        const localResults = !!local.info?.results
-        setResultsReady(localResults)
+  const localComputing = !!local.info?._computing
+  const localResults = !!local.info?.results
+  if (localResults) setStatusMessage('Results received')
         setHostId((local.info as any)?.hostId)
-        setIsComputing(prev => prev || localComputing || stickyComputing)
+        // reflect computing state via stickyComputing and server flags; UI shows statusMessage instead
+        if (localComputing || stickyComputing) setStatusMessage('Computing in progress...')
       }
     } catch {
       // ignore local read errors
@@ -36,13 +35,12 @@ export default function AlreadySubmitted({ code, userId, onShowResults }: Props)
       if (serverRoom) {
         setUsersCount(serverRoom.users.length)
         setSubmissions(serverRoom.info?.submissions || {})
-        const serverComputing = !!serverRoom.info?._computing
-        const serverResults = !!serverRoom.info?.results
-        setResultsReady(serverResults)
+  const serverComputing = !!serverRoom.info?._computing
+  const serverResults = !!serverRoom.info?.results
+  if (serverResults) setStatusMessage('Results received')
         setHostId((serverRoom.info as any)?.hostId)
-        setIsComputing(prev => prev || serverComputing || stickyComputing)
+        if (serverComputing || stickyComputing) setStatusMessage('Computing in progress...')
         if (serverResults) setStickyComputing(false)
-        if (serverComputing || stickyComputing) setModalVisible(true)
         if (serverResults && onShowResults && !navigatedToResults) {
           setNavigatedToResults(true)
           onShowResults()
@@ -85,37 +83,45 @@ export default function AlreadySubmitted({ code, userId, onShowResults }: Props)
 
   // ====== NEW: extracted click handler with console logging ======
   async function handleComputeClick() {
-    // host requested computing; keep modal visible until results arrive
-    setStickyComputing(true)
-    setIsComputing(true)
-    setModalVisible(true)
+  // host requested computing; set sticky flag and show a status message
+  setStickyComputing(true)
+  setStatusMessage('Sending compute payload to server...')
 
     // mark computing state so other clients show waiting modal
     updateRoom(code, { info: { _computing: true } })
     setRoomInfo(code, { _computing: true }).catch((e) => console.warn('setRoomInfo failed', e))
 
-    // schedule compute in next tick so the modal can render first
-    setTimeout(async () => {
+    // schedule compute in next tick so the UI updates first
+  setTimeout(async () => {
       try {
         // send the exact info host sees (submissions/preferences/roomNames/totalRent/photos)
         const local = getLocalRoom(code)
         const infoToSend = local?.info || {}
 
+  // inform and log what we are about to send
+  setStatusMessage('Sending compute payload to server...')
+        console.log('[client] compute payload to send:', {
+          submissionsKeys: Object.keys((infoToSend.submissions || {})),
+          preferencesPresent: !!infoToSend.preferences,
+          roomNames: infoToSend.roomNames,
+          totalRent: infoToSend.totalRent
+        })
+
         console.time('[client] computeAssignmentAndPrices')
         const data = await computeAssignmentAndPrices(code, infoToSend)
         console.timeEnd('[client] computeAssignmentAndPrices')
 
-        // ⭐ print algorithm result for host
-        logResultsToConsole(data)
+  // ⭐ print algorithm result for host
+  logResultsToConsole(data)
+  setStatusMessage('Results received')
 
         const resultsArray = Array.isArray(data) ? data : (data?.results ?? null)
         if (resultsArray) {
           // persist results locally & server-side
           updateRoom(code, { info: { results: resultsArray, _computing: false } })
           try { await setRoomInfo(code, { results: resultsArray, _computing: false }) } catch (e) { console.warn('setRoomInfo failed', e) }
-          setResultsReady(true)
           setStickyComputing(false)
-          setIsComputing(false)
+          setStatusMessage('Results received')
           // navigate to results
           onShowResults && onShowResults()
         } else {
@@ -123,14 +129,14 @@ export default function AlreadySubmitted({ code, userId, onShowResults }: Props)
           updateRoom(code, { info: { _computing: false } })
           try { await setRoomInfo(code, { _computing: false }) } catch (e) { console.warn('setRoomInfo failed', e) }
           setStickyComputing(false)
-          setIsComputing(false)
+          setStatusMessage('No results returned from server')
         }
       } catch (e) {
         console.warn('computeAssignmentAndPrices failed', e)
         updateRoom(code, { info: { _computing: false } })
         try { await setRoomInfo(code, { _computing: false }) } catch (err) { console.warn('setRoomInfo failed', err) }
         setStickyComputing(false)
-        setIsComputing(false)
+        setStatusMessage('Compute failed')
       }
     }, 50)
   }
@@ -157,31 +163,7 @@ export default function AlreadySubmitted({ code, userId, onShowResults }: Props)
         </div>
       ) : null}
 
-      {/* Modal shown while computing (host triggers) */}
-      {isComputing && modalVisible ? (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white p-6 rounded shadow max-w-sm w-full relative">
-            <button
-              aria-label="close"
-              className="absolute left-2 top-2 text-gray-500 hover:text-gray-800"
-              onClick={() => setModalVisible(false)}
-            >
-              ×
-            </button>
-            <div className="text-lg font-semibold mb-3">Waiting for result…</div>
-            <div className="text-sm text-gray-600 mb-4">
-              The host is computing the final assignment. Please wait.
-            </div>
-            <button
-              className={`px-4 py-2 rounded ${resultsReady ? 'bg-green-600 text-white' : 'bg-gray-300 text-gray-600'}`}
-              disabled={!resultsReady}
-              onClick={() => { if (resultsReady) onShowResults && onShowResults() }}
-            >
-              Show Result
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {/* Modal removed — compute status is shown via `statusMessage` below */}
 
       <div className="grid grid-cols-1 gap-3">
         {Object.values(submissions).map((s: any, i: number) => (
@@ -198,6 +180,10 @@ export default function AlreadySubmitted({ code, userId, onShowResults }: Props)
           </div>
         ))}
       </div>
+
+      {statusMessage ? (
+        <div className="mt-4 text-sm text-blue-600">{statusMessage}</div>
+      ) : null}
 
       <div className="mt-6 text-sm text-gray-500">
         If everyone has submitted, the creator can compute assignments and show results.
