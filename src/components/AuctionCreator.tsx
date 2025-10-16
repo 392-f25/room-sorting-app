@@ -3,7 +3,7 @@ import type { PropsWithChildren } from 'react';
 import type { CreateData } from '../types';
 
 // The `users` property is no longer needed at creation time.
-export const AuctionCreator = ({ onCreate }: PropsWithChildren<{ onCreate: (data: Omit<CreateData, 'users'>) => void }>) => {
+export const AuctionCreator = ({ onCreate }: PropsWithChildren<{ onCreate: (data: CreateData) => void }>) => {
   const [totalRent, setTotalRent] = useState<number>(0);
   const [count, setCount] = useState<number>(2);
   const [roomNames, setRoomNames] = useState<string[]>(['Room 1', 'Room 2']);
