@@ -87,24 +87,42 @@ export const onselectionwrite = onValueWritten(
 
     // 7. Process the grouped selections
     for (const roomId in selectionsByRoom) {
-      const userIds = selectionsByRoom[roomId];
+      const challengers = selectionsByRoom[roomId];
+      const room = auction.rooms[roomId];
+      const occupantId = room.assignedUserId;
 
-      if (userIds.length === 1) {
-        // --- NO CONFLICT ---
-        const userId = userIds[0];
-        logger.info(`No conflict for room ${roomId}. Assigning to user ${userId}.`);
-
-        // Assign the room to the user
-        assignRoomToUser(updates, auctionId, userId, roomId);
+      if (!occupantId) {
+        // --- SCENARIO A: Room is EMPTY ---
+        if (challengers.length === 1) {
+          // NO CONFLICT: Direct assignment
+          const winnerId = challengers[0];
+          logger.info(`Assigning empty room ${roomId} to single selector ${winnerId}.`);
+          assignRoomToUser(updates, auctionId, winnerId, roomId);
+        } else {
+          // CONFLICT: Bidding war for empty room
+          logger.info(`Conflict for empty room ${roomId}. Starting bidding war.`);
+          updates[`/auctions/${auctionId}/rooms/${roomId}/status`] = 'bidding';
+          const conflictingUsers: Record<string, true> = {};
+          challengers.forEach(id => {
+            conflictingUsers[id] = true;
+          });
+          updates[`/auctions/${auctionId}/rooms/${roomId}/conflictingUserIds`] = conflictingUsers;
+        }
       } else {
-        // --- CONFLICT ---
-        logger.info(`Conflict detected for room ${roomId}. Starting a bidding war.`);
+        // --- SCENARIO B: Room is OCCUPIED (Challenge) ---
+        logger.info(`Challenge for occupied room ${roomId}. Starting bidding war.`);
+        
+        // Un-assign the room from the original occupant
+        updates[`/auctions/${auctionId}/users/${occupantId}/assignedRoomId`] = null;
+        updates[`/auctions/${auctionId}/rooms/${roomId}/assignedUserId`] = null;
+
+        // Start a bidding war including the original occupant and all challengers
         updates[`/auctions/${auctionId}/rooms/${roomId}/status`] = 'bidding';
-        // Store which users are in the conflict for this room
-        const conflictingUsers: Record<string, boolean> = {};
-        userIds.forEach(id => {
+        const conflictingUsers: Record<string, true> = {};
+        challengers.forEach(id => {
           conflictingUsers[id] = true;
         });
+        conflictingUsers[occupantId] = true; // Add original occupant to the war
         updates[`/auctions/${auctionId}/rooms/${roomId}/conflictingUserIds`] = conflictingUsers;
       }
     }

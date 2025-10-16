@@ -91,14 +91,19 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
 
   const handleBid = (roomId: string) => {
     const amount = Number(bidInputs[`${roomId}:${currentUserId}`] ?? 0);
-    const basePrice = auction.totalRent / Object.keys(auction.rooms).length;
+    const room = auction.rooms[roomId];
+
+    if (!room) {
+      alert('An error occurred: Room not found.');
+      return;
+    }
 
     if (isNaN(amount) || amount <= 0) {
       alert('Please enter a valid bid amount.');
       return;
     }
-    if (amount < basePrice) {
-      alert(`Your bid must be at least the base rent of $${basePrice.toFixed(2)}.`);
+    if (amount < room.price) {
+      alert(`Your bid must be at least the current room price of $${room.price.toFixed(2)}.`);
       return;
     }
     if (amount > auction.totalRent) {
@@ -193,9 +198,15 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
                       disabled={isSubmitting || hasSubmitted}
                     >
                       <option value=''>-- choose --</option>
-                      {Object.values(auction.rooms || {}).filter(r => !r.assignedUserId).map(r => (
-                        <option key={r.id} value={r.id}>{r.name} (${r.price.toFixed(2)})</option>
-                      ))}
+                      {Object.values(auction.rooms || {}).map(r => {
+                        const occupant = r.assignedUserId ? auction.users[r.assignedUserId] : null;
+                        const displayText = occupant
+                          ? `${r.name} ($${r.price.toFixed(2)}) - Occupied by ${occupant.name}`
+                          : `${r.name} ($${r.price.toFixed(2)})`;
+                        return (
+                          <option key={r.id} value={r.id}>{displayText}</option>
+                        );
+                      })}
                     </select>
                   ) : (
                     <div className='text-slate-500'>
