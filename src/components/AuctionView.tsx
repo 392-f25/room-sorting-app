@@ -14,7 +14,7 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
   const [selections, setSelections] = useState<Record<string, string | null>>(() => Object.fromEntries(Object.keys(auction.users || {}).map(uid => [uid, null])));
   const [realtimeSelections, setRealtimeSelections] = useState<Record<string, string>>({});
   const [realtimeBids, setRealtimeBids] = useState<Record<string, Record<string, number>>>({});
-  const [bidInputs, setBidInputs] = useState<Record<string, number>>({});
+  const [bidInputs, setBidInputs] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -61,6 +61,7 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
   useEffect(() => {
     if (phase !== 'bid') {
       setRealtimeBids({});
+      setBidInputs({}); // Clear bid inputs when not in bid phase
       return;
     }
     const biddingRef = ref(db, `auctions/${auction.id}/bidding`);
@@ -250,7 +251,7 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
                               min='1'
                               step='1'
                               value={bidInputs[`${room.id}:${user.id}`] ?? ''}
-                              onChange={(e) => setBidInputs(prev => ({ ...prev, [`${room.id}:${user.id}`]: Number(e.target.value) }))}
+                              onChange={(e) => setBidInputs(prev => ({ ...prev, [`${room.id}:${user.id}`]: e.target.value }))}
                               disabled={hasUserBid}
                             />
                             <button
