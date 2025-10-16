@@ -12,7 +12,7 @@ export type Room = {
   price: number;
   assignedUserId: ID | null;
   status: 'available' | 'bidding' | 'assigned';
-  conflictingUserIds?: ID[];
+  conflictingUserIds?: {[key: ID]: true};
 };
 
 export type Auction = {

@@ -55,12 +55,7 @@ export const subscribeToAuction = (
   const listener = onValue(auctionRef, (snapshot) => {
     if (snapshot.exists()) {
       const auctionData = snapshot.val();
-
-      // Firebase returns arrays as objects if they are sparse, so we convert them back
-      const users = auctionData.users ? Object.values(auctionData.users) : [];
-      const rooms = auctionData.rooms ? Object.values(auctionData.rooms) : [];
-
-      onUpdate({ ...auctionData, users, rooms });
+      onUpdate(auctionData);
     }
   });
 

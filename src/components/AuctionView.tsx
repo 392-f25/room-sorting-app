@@ -7,7 +7,7 @@ import { placeBid, submitSelection } from '../utilities/auction-client';
 // A helper type to include the status from our assumed backend logic
 type RoomWithStatus = Auction['rooms'][0] & {
   status?: string;
-  conflictingUserIds?: Record<string, boolean>;
+  conflictingUserIds?: {[key: string]: true};
 };
 
 export const AuctionView = ({ auction, currentUserId }: { auction: Auction, currentUserId: string }) => {
@@ -194,7 +194,7 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
         <div>
           <h3 className='font-semibold mb-2'>Bidding phase</h3>
           {conflictingRooms.map(room => {
-            const usersInConflict = Object.values(auction.users || {}).filter(u => room.conflictingUserIds?.includes(u.id));
+            const usersInConflict = Object.values(auction.users || {}).filter(u => room.conflictingUserIds?.[u.id]);
 
             return (
               <div key={room.id} className='mb-4 border p-3 rounded'>
