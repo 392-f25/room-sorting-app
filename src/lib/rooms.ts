@@ -101,6 +101,12 @@ export async function getRoom(code: string): Promise<Room | null> {
   return rooms.find(r => r.code === code) || null
 }
 
+// Read room from local storage only (no server call). Returns null if not found.
+export function getLocalRoom(code: string): Room | null {
+  const rooms = loadAll()
+  return rooms.find(r => r.code === code) || null
+}
+
 export function updateRoom(code: string, patch: Partial<Room>) {
   // client-side stub: UI updates should come from server status endpoint; keep local storage for offline
   const rooms = loadAll()
@@ -130,11 +136,16 @@ export async function getSubmissions(code: string): Promise<Record<string, numbe
 
 // Simple Hungarian algorithm implementation for square cost matrix using O(n^3) approach.
 // We'll treat bids as valuations; to maximize total valuation we minimize negative valuations.
-export async function computeAssignmentAndPrices(code: string) {
-  const res = await fetch(`${API_PREFIX}/api/room/compute/${code}`, { method: 'POST' })
-  if (!res.ok) return null
-  const data = await res.json()
-  return data.results
+export async function computeAssignmentAndPrices(code: string, info?: Record<string, any>) {
+  try {
+    const res = await fetch(`${API_PREFIX}/api/room/compute/${code}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ info: info || null }) })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.results
+  } catch (e) {
+    // server not available or network error
+    return null
+  }
 }
 
 export async function setRoomInfo(code: string, info: Record<string, any>) {

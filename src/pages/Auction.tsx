@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getRoom, submitBids } from '../lib/rooms'
+import { getRoom, submitBids, updateRoom } from '../lib/rooms'
 
 type Props = { code: string, userId: string, onSubmitted: () => void }
 
@@ -43,18 +43,38 @@ export default function Auction({ code, userId, onSubmitted }: Props) {
   const clearPreferences = () => setPreferenceOrder([])
 
   const handleSubmit = async () => {
-    await submitBids(code, userId, prices)
+    // try server submit but never block local persistence/navigation on network errors
     try {
-      // also persist the preference order in room info so others/tabs can read it
-      // store as indices in order
-      // use updateRoom from lib if available (fallback to server handled by lib)
-      const { updateRoom } = await import('../lib/rooms')
-      updateRoom(code, { info: { submissions: { [userId]: prices }, preferences: { [userId]: preferenceOrder } } })
+      await submitBids(code, userId, prices)
     } catch (e) {
-      // non-fatal
-      console.warn('failed to persist preferences locally', e)
+      console.warn('submitBids failed, will persist locally and continue', e)
     }
-    onSubmitted()
+
+    try {
+      // build structured submission entries: username, per-room price, and preference order
+      const room = await getRoom(code)
+      const username = room?.users.find(u => u.id === userId)?.name || userId
+      const roomNames = room?.info?.roomNames || []
+      const submission = {
+        userId,
+        username,
+        rooms: roomNames.map((rn: string, idx: number) => ({ roomName: rn, price: prices[idx] ?? 0 })),
+        preferenceOrder
+      }
+      // merge into existing submissions object
+      const existing = { ...(room?.info?.submissions || {}) }
+      existing[userId] = submission
+      updateRoom(code, { info: { submissions: existing } })
+    } catch (e) {
+      console.warn('failed to persist submission locally', e)
+    }
+
+    // parent controls navigation (App will route to AlreadySubmitted)
+    try {
+      onSubmitted()
+    } catch (e) {
+      console.warn('onSubmitted callback error', e)
+    }
   }
 
   return (

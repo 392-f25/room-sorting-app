@@ -57,6 +57,14 @@ function computeResults(r) {
   const subs = r.info.submissions || {}
   const prefs = r.info.preferences || {}
 
+  console.log('[compute] input snapshot:', {
+    roomNames: names,
+    users: users.map(u => ({ id: u.id, name: u.name })),
+    hasPreferences: !!r.info.preferences,
+    totalRent: r.info.totalRent
+  })
+
+
   // Build preference lists for users. If user provided explicit preference order, use it.
   // Otherwise, infer preference order by descending bid for that user.
   const userIdToIndex = {}
@@ -73,6 +81,8 @@ function computeResults(r) {
     bids.sort((a, b) => b.b - a.b || a.idx - b.idx)
     return bids.map(x => x.idx)
   })
+  console.log('[compute] user preference lists (by room index):', prefLists)
+
 
   // Prepare state for stable-matching-like algorithm: users propose to rooms in order
   const nextProposal = Array(userCount).fill(0)
@@ -182,17 +192,42 @@ function computeResults(r) {
   // Print final adjusted allocations
   const final = results.filter(r => r.user).map(r => `${r.user} gets ${r.roomName || '\u2014'} at final price ${r.price}`).join(', ')
   console.log('Final adjusted allocation:', final)
+  console.log('[compute] results (structured):\n', JSON.stringify(results, null, 2))
+
 
   // persist results
   r.info.results = results
   return results
 }
 
-app.post('/api/room/compute/:code', (req, res) => {
+app.post('/api/room/compute/:code',async(req, res) => {
   const r = rooms[req.params.code]
   if (!r) return res.status(404).json({ error: 'not found' })
+
+  // If the caller posted an `info` object (submissions, preferences, totals, etc.), merge it
+  // into the server-side room state before computing. This allows the host to send the
+  // latest bids/preferences in the compute request body.
+  try {
+    const postedInfo = req.body && req.body.info ? req.body.info : null
+    if (postedInfo && typeof postedInfo === 'object') {
+      r.info = { ...(r.info || {}), ...(postedInfo || {}) }
+    }
+  } catch (e) {
+    // ignore body merge errors
+  }
+
+  // Mark computing state so clients that poll /status can see that the server is running
+  // the computation. Clients may also set this flag themselves via /api/room/update.
+  r.info = r.info || {}
+  r.info._computing = true
+
   const results = computeResults(r)
-  res.json({ ok: true, results })
+  console.log(`[compute:${code}] done, results count=${results.length}`)
+
+  // Clear computing flag and persist results (computeResults already sets r.info.results)
+  r.info._computing = false
+
+  return res.json({ ok: true, results })
 })
 
 const __filename = fileURLToPath(import.meta.url)
