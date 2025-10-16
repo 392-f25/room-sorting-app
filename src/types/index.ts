@@ -38,3 +38,51 @@ export type CreateData = {
   totalRent: number;
   rooms: string[];
 };
+
+// Server-side types for Firebase Functions
+export interface AuctionData {
+  totalRent: number;
+  rooms: string[];
+  users: string[];
+}
+
+export interface ServerRoom {
+  id: string;
+  name: string;
+  price: number;
+  assignedUserId?: string;
+}
+
+export interface ServerUser {
+  id: string;
+  name: string;
+  assignedRoomId?: string;
+}
+
+export interface ServerAuction {
+  id: string;
+  totalRent: number;
+  users: ServerUser[];
+  rooms: ServerRoom[];
+}
+
+export interface ServerBid {
+  userId: string;
+  amount: number;
+}
+
+export interface ServerConflict {
+  conflicts: string[];
+  roomToUsers: Record<string, string[]>;
+}
+
+export interface AuctionState {
+  assignments: Record<string, { userId: string | null; price: number }>;
+}
+
+export interface AuctionDetails {
+  totalRent: number;
+  status: string;
+  rooms: Record<string, { name: string; basePrice: number }>;
+  users: Record<string, { name: string }>;
+}

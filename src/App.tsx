@@ -15,7 +15,7 @@ const HomePage = () => {
       navigate(`/auction/${newAuctionId}`);
     } catch (err) {
       console.error('Failed to create auction', err);
-    }
+    } 
   };
 
   return (
