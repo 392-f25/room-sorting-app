@@ -90,7 +90,7 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
   };
 
   const handleBid = (roomId: string) => {
-    const amount = Number(bidInputs[`${roomId}:${currentUserId}`] ?? 0);
+    const amount = Number(bidInputs[`${roomId}:${currentUserId}`] ?? '');
     const room = auction.rooms[roomId];
 
     if (!room) {
@@ -98,12 +98,24 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
       return;
     }
 
-    if (isNaN(amount) || amount <= 0) {
+    if (isNaN(amount)) {
       alert('Please enter a valid bid amount.');
       return;
     }
+
+    // Your bid must be at least the current price.
     if (amount < room.price) {
-      alert(`Your bid must be at least the current room price of $${room.price.toFixed(2)}.`);
+      alert(
+        `Your bid must be at least the current room price of $${room.price.toFixed(
+          2,
+        )}`,
+      );
+      return;
+    }
+
+    // If the room price is negative, you can't bid a positive amount.
+    if (room.price < 0 && amount > 0) {
+      alert('For rooms with a negative price, your bid cannot be positive.');
       return;
     }
 
@@ -248,7 +260,6 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
                             <input
                               className='p-2 border rounded'
                               type='number'
-                              min='1'
                               step='1'
                               value={bidInputs[`${room.id}:${user.id}`] ?? ''}
                               onChange={(e) => setBidInputs(prev => ({ ...prev, [`${room.id}:${user.id}`]: e.target.value }))}

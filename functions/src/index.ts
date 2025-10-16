@@ -24,6 +24,7 @@ function assignRoomToUser(
 ) {
   updates[`/auctions/${auctionId}/users/${userId}/assignedRoomId`] = roomId;
   updates[`/auctions/${auctionId}/rooms/${roomId}/assignedUserId`] = userId;
+  updates[`/auctions/${auctionId}/rooms/${roomId}/status`] = 'assigned';
 }
 
 // Type definitions are imported from './types'.
@@ -186,11 +187,18 @@ export const onbidwrite = onValueWritten(
     logger.info(`All bids are in for room ${roomId}. Processing results...`);
 
     // 4. Find the winning bid
-    let winnerId = '';
-    let highestBid = -1;
-    for (const userId in bids) {
-      if (bids[userId] > highestBid) {
-        highestBid = bids[userId];
+    const bidEntries = Object.entries<number>(bids);
+    if (bidEntries.length === 0) {
+      logger.error(`No bids found for room ${roomId} when trying to determine a winner.`);
+      return null;
+    }
+
+    let [winnerId, highestBid] = bidEntries[0]; // Start with the first bidder as the winner
+
+    for (let i = 1; i < bidEntries.length; i++) {
+      const [userId, bid] = bidEntries[i];
+      if (bid > highestBid) {
+        highestBid = bid;
         winnerId = userId;
       }
     }
