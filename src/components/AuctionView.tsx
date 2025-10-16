@@ -23,7 +23,7 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
     const usersArray = Object.values(auction.users || {});
     const roomsArray = Object.values(auction.rooms || {});
 
-    const isFull = usersArray.length >= roomsArray.length;
+    const isFull = Object.keys(auction.users || {}).length >= Object.keys(auction.rooms || {}).length;
     if (!isFull) {
       return { phase: 'waiting', conflictingRooms: [], unassignedUsers: [] };
     }
@@ -91,7 +91,21 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
 
   const handleBid = (roomId: string) => {
     const amount = Number(bidInputs[`${roomId}:${currentUserId}`] ?? 0);
-    if (amount <= 0 || amount >= auction.totalRent) return;
+    const basePrice = auction.totalRent / Object.keys(auction.rooms).length;
+
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid bid amount.');
+      return;
+    }
+    if (amount < basePrice) {
+      alert(`Your bid must be at least the base rent of $${basePrice.toFixed(2)}.`);
+      return;
+    }
+    if (amount > auction.totalRent) {
+      alert(`Your bid cannot exceed the total rent of $${auction.totalRent}.`);
+      return;
+    }
+
     placeBid(auction.id, roomId, currentUserId, amount);
   };
 
@@ -150,7 +164,21 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
         <div>
           <h3 className='font-semibold mb-2'>Select your preferred room</h3>
           <div className='space-y-4'>
-            {unassignedUsers.map(user => {
+            {Object.values(auction.users || {}).map(user => {
+              // User is already assigned a room
+              if (user.assignedRoomId) {
+                const assignedRoom = auction.rooms[user.assignedRoomId];
+                return (
+                  <div key={user.id} className='flex items-center gap-3 p-2 rounded bg-slate-100'>
+                    <div className='w-28'>{user.name} {user.id === currentUserId && '(You)'}</div>
+                    <div className='text-slate-600 font-medium'>
+                      ✓ Assigned: {assignedRoom?.name ?? '...'}
+                    </div>
+                  </div>
+                );
+              }
+
+              // User is not assigned, show selection UI
               const otherUserSelectionId = realtimeSelections[user.id];
               const otherUserSelectionName = otherUserSelectionId ? auction.rooms[otherUserSelectionId]?.name : null;
 
@@ -178,15 +206,17 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
               );
             })}
           </div>
-          <div className='mt-4'>
-            <button
-              className='bg-green-600 text-white px-4 py-2 rounded disabled:bg-slate-400'
-              onClick={handleSelections}
-              disabled={isSubmitting || hasSubmitted}
-            >
-              {isSubmitting ? 'Submitting...' : hasSubmitted ? 'Submitted' : 'Submit Selection'}
-            </button>
-          </div>
+          {!auction.users[currentUserId]?.assignedRoomId && (
+            <div className='mt-4'>
+              <button
+                className='bg-green-600 text-white px-4 py-2 rounded disabled:bg-slate-400'
+                onClick={handleSelections}
+                disabled={isSubmitting || hasSubmitted}
+              >
+                {isSubmitting ? 'Submitting...' : hasSubmitted ? 'Submitted' : 'Submit Selection'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

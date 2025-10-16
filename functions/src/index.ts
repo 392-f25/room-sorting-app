@@ -120,3 +120,105 @@ export const onselectionwrite = onValueWritten(
   }
 );
 
+export const onbidwrite = onValueWritten(
+  '/auctions/{auctionId}/bidding/{roomId}/{userId}',
+  async (event) => {
+    // Exit if the bid was deleted to prevent re-triggering
+    if (!event.data.after.exists()) {
+      logger.info('Bid was deleted, exiting function.');
+      return null;
+    }
+
+    const { auctionId, roomId } = event.params;
+    const db = getDatabase();
+
+    // 1. Get the conflicting users for the room
+    const roomRef = db.ref(`/auctions/${auctionId}/rooms/${roomId}`);
+    const roomSnapshot = await roomRef.once('value');
+    const room = roomSnapshot.val();
+
+    if (!room || !room.conflictingUserIds) {
+      logger.error(
+        `Room ${roomId} or conflicting users not found for auction ${auctionId}.`
+      );
+      return null;
+    }
+
+    const expectedBidders = Object.keys(room.conflictingUserIds);
+    const expectedBidderCount = expectedBidders.length;
+
+    // 2. Get the current bids for the room
+    const bidsRef = db.ref(`/auctions/${auctionId}/bidding/${roomId}`);
+    const bidsSnapshot = await bidsRef.once('value');
+    const bids = bidsSnapshot.val() || {};
+
+    const actualBidderCount = Object.keys(bids).length;
+
+    logger.info(
+      `Checking bids for room ${roomId} in auction ${auctionId}: ${actualBidderCount} of ${expectedBidderCount} have bid.`
+    );
+
+    // 3. Compare counts and exit if not all bids are in
+    if (actualBidderCount < expectedBidderCount) {
+      logger.info('Still waiting for more bids.');
+      return null;
+    }
+
+    // If we reach here, all bids are in.
+    logger.info(`All bids are in for room ${roomId}. Processing results...`);
+
+    // 4. Find the winning bid
+    let winnerId = '';
+    let highestBid = -1;
+    for (const userId in bids) {
+      if (bids[userId] > highestBid) {
+        highestBid = bids[userId];
+        winnerId = userId;
+      }
+    }
+
+    logger.info(
+      `Winner for room ${roomId} is ${winnerId} with a bid of ${highestBid}.`
+    );
+
+    // 5. Prepare atomic updates
+    const updates: { [key: string]: unknown } = {};
+
+    // Assign the room to the winner
+    assignRoomToUser(updates, auctionId, winnerId, roomId);
+
+    // Update the winning room's price and status
+    updates[`/auctions/${auctionId}/rooms/${roomId}/price`] = highestBid;
+    updates[`/auctions/${auctionId}/rooms/${roomId}/status`] = 'assigned';
+    updates[`/auctions/${auctionId}/rooms/${roomId}/conflictingUserIds`] = null;
+
+    // Clean up the bidding node for this room
+    updates[`/auctions/${auctionId}/bidding/${roomId}`] = null;
+
+    // 6. Recalculate prices for remaining rooms
+    const auctionSnapshot = await db.ref(`/auctions/${auctionId}`).once('value');
+    const auction: Auction = auctionSnapshot.val();
+
+    const remainingRent = auction.totalRent - highestBid;
+    const unassignedRooms = Object.values(auction.rooms).filter(
+      (r) => r.status === 'available' && r.id !== roomId
+    );
+
+    if (unassignedRooms.length > 0) {
+      const newPrice = remainingRent / unassignedRooms.length;
+      logger.info(
+        `Recalculating prices for ${unassignedRooms.length} remaining rooms. New price: ${newPrice}`
+      );
+      for (const r of unassignedRooms) {
+        updates[`/auctions/${auctionId}/rooms/${r.id}/price`] = newPrice;
+      }
+    }
+
+    // 7. Atomically apply all updates
+    await db.ref().update(updates);
+    logger.info(`Successfully resolved bid for room ${roomId}.`);
+
+    return null;
+  }
+);
+

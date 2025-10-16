@@ -61,7 +61,7 @@ const AuctionRoomPage = () => {
     return <div>Loading Auction...</div>;
   }
 
-  const isAuctionFull = auction.users.length >= auction.rooms.length;
+  const isAuctionFull = Object.keys(auction.users || {}).length >= Object.keys(auction.rooms || {}).length;
 
   // If user is not yet registered for this auction, decide what to show
   if (!userId) {
