@@ -5,11 +5,15 @@ import type { Auction } from '../types';
 import { placeBid, submitSelection } from '../utilities/auction-client';
 
 // A helper type to include the status from our assumed backend logic
-type RoomWithStatus = Auction['rooms'][0] & { status?: string };
+type RoomWithStatus = Auction['rooms'][0] & {
+  status?: string;
+  conflictingUserIds?: Record<string, boolean>;
+};
 
 export const AuctionView = ({ auction, currentUserId }: { auction: Auction, currentUserId: string }) => {
   const [selections, setSelections] = useState<Record<string, string | null>>(() => Object.fromEntries(auction.users.map(u => [u.id, null])));
   const [realtimeSelections, setRealtimeSelections] = useState<Record<string, string>>({});
+  const [realtimeBids, setRealtimeBids] = useState<Record<string, Record<string, number>>>({});
   const [bidInputs, setBidInputs] = useState<Record<string, number>>({});
   const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -49,6 +53,20 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
     });
 
     return () => off(selectionsRef, 'value', listener);
+  }, [auction.id, phase]);
+
+  // Listen to real-time bids from other users
+  useEffect(() => {
+    if (phase !== 'bid') {
+      setRealtimeBids({});
+      return;
+    }
+    const biddingRef = ref(db, `auctions/${auction.id}/bidding`);
+    const listener = onValue(biddingRef, (snapshot) => {
+      setRealtimeBids(snapshot.val() ?? {});
+    });
+
+    return () => off(biddingRef, 'value', listener);
   }, [auction.id, phase]);
 
 
@@ -172,26 +190,50 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
       {phase === 'bid' && (
         <div>
           <h3 className='font-semibold mb-2'>Bidding phase</h3>
-          {conflictingRooms.map(room => (
-            <div key={room.id} className='mb-4 border p-3 rounded'>
-              <div className='font-medium'>Room: {room.name}</div>
-              <div className='space-y-2 mt-2'>
-                {auction.users.filter(u => !u.assignedRoomId).map(user => (
-                   <div key={user.id} className={`flex items-center gap-2 p-2 rounded ${user.id === currentUserId ? 'bg-blue-50' : ''}`}>
-                     <div className='w-28'>{user.name} {user.id === currentUserId && '(You)'}</div>
-                     {user.id === currentUserId ? (
-                        <>
-                          <input className='p-2 border rounded' type='number' min='1' step='1' value={bidInputs[`${room.id}:${user.id}`] ?? ''} onChange={(e) => setBidInputs(prev => ({ ...prev, [`${room.id}:${user.id}`]: Number(e.target.value) }))} />
-                          <button className='px-2 py-1 bg-blue-600 text-white rounded' onClick={() => handleBid(room.id)}>Submit Bid</button>
-                        </>
-                     ) : (
-                      <div className='text-slate-500'><i>Bidding...</i></div>
-                     )}
-                   </div>
-                ))}
+          {conflictingRooms.map(room => {
+            const usersInConflict = auction.users.filter(u => (room as RoomWithStatus).conflictingUserIds?.[u.id]);
+
+            return (
+              <div key={room.id} className='mb-4 border p-3 rounded'>
+                <div className='font-medium'>Room: {room.name}</div>
+                <div className='space-y-2 mt-2'>
+                  {usersInConflict.map(user => {
+                    const hasUserBid = realtimeBids[room.id]?.[user.id] !== undefined;
+
+                    return (
+                     <div key={user.id} className={`flex items-center gap-2 p-2 rounded ${user.id === currentUserId ? 'bg-blue-50' : ''}`}>
+                       <div className='w-28'>{user.name} {user.id === currentUserId && '(You)'}</div>
+                       {user.id === currentUserId ? (
+                          <>
+                            <input
+                              className='p-2 border rounded'
+                              type='number'
+                              min='1'
+                              step='1'
+                              value={bidInputs[`${room.id}:${user.id}`] ?? ''}
+                              onChange={(e) => setBidInputs(prev => ({ ...prev, [`${room.id}:${user.id}`]: Number(e.target.value) }))}
+                              disabled={hasUserBid}
+                            />
+                            <button
+                              className='px-2 py-1 bg-blue-600 text-white rounded disabled:bg-slate-400'
+                              onClick={() => handleBid(room.id)}
+                              disabled={hasUserBid}
+                            >
+                              {hasUserBid ? 'Submitted' : 'Submit Bid'}
+                            </button>
+                          </>
+                       ) : (
+                        <div className='text-slate-500'>
+                          {hasUserBid ? <em>Bid Submitted</em> : <i>Bidding...</i>}
+                        </div>
+                       )}
+                     </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

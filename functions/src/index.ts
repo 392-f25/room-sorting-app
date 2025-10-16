@@ -114,6 +114,12 @@ export const onselectionwrite = onValueWritten(
         // --- CONFLICT ---
         logger.info(`Conflict detected for room ${roomId}. Starting a bidding war.`);
         updates[`/auctions/${auctionId}/rooms/${roomIndex}/status`] = 'bidding';
+        // Store which users are in the conflict for this room
+        const conflictingUsers: Record<string, boolean> = {};
+        userIds.forEach(id => {
+          conflictingUsers[id] = true;
+        });
+        updates[`/auctions/${auctionId}/rooms/${roomIndex}/conflictingUserIds`] = conflictingUsers;
       }
     }
 
