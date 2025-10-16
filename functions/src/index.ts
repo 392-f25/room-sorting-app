@@ -217,26 +217,26 @@ export const onbidwrite = onValueWritten(
     const auctionSnapshot = await db.ref(`/auctions/${auctionId}`).once('value');
     const auction: Auction = auctionSnapshot.val();
 
-    // After the current room is assigned, find all assigned rooms and sum their prices
-    const assignedRooms = Object.values(auction.rooms).filter(
-      (r) => r.assignedUserId || r.id === roomId // Include the room just won
+    // Sum the prices of all rooms that are NOT available (i.e., assigned or bidding)
+    const nonAvailableRooms = Object.values(auction.rooms).filter(
+      (r) => r.status !== 'available' || r.id === roomId // Include the room just won
     );
-    const sumOfAssignedPrices = assignedRooms.reduce((sum, r) => {
+    const sumOfNonAvailablePrices = nonAvailableRooms.reduce((sum, r) => {
         // The room just won isn't in the auction object yet, so use its bid price
         return sum + (r.id === roomId ? highestBid : r.price);
     }, 0);
 
-    const remainingRent = auction.totalRent - sumOfAssignedPrices;
-    const unassignedRooms = Object.values(auction.rooms).filter(
-      (r) => !r.assignedUserId && r.id !== roomId
+    const remainingRent = auction.totalRent - sumOfNonAvailablePrices;
+    const availableRooms = Object.values(auction.rooms).filter(
+      (r) => r.status === 'available' && r.id !== roomId
     );
 
-    if (unassignedRooms.length > 0) {
-      const newPrice = remainingRent / unassignedRooms.length;
+    if (availableRooms.length > 0) {
+      const newPrice = remainingRent / availableRooms.length;
       logger.info(
-        `Recalculating prices for ${unassignedRooms.length} remaining rooms. New price: ${newPrice}`
+        `Recalculating prices for ${availableRooms.length} remaining rooms. New price: ${newPrice}`
       );
-      for (const r of unassignedRooms) {
+      for (const r of availableRooms) {
         updates[`/auctions/${auctionId}/rooms/${r.id}/price`] = newPrice;
       }
     }
