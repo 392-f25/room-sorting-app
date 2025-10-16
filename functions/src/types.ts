@@ -4,6 +4,7 @@ export type User = {
   id: ID;
   name: string;
   assignedRoomId: ID | null;
+  isReady: boolean;
 };
 
 export type Room = {
@@ -20,11 +21,10 @@ export type Auction = {
   totalRent: number;
   users: {[key: ID]: User};
   rooms: {[key: ID]: Room};
-};
-
-// The object produced by AuctionCreator component upon form submission
-export type CreateData = {
-  totalRent: number;
-  rooms: string[];
-  users: string[];
+  selections: {[key: ID]: ID};
+  bidding: {
+    [key: ID]: {
+      [key: ID]: number;
+    };
+  };
 };

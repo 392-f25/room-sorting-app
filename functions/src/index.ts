@@ -2,36 +2,31 @@ import { onValueWritten } from 'firebase-functions/v2/database';
 import * as logger from 'firebase-functions/logger';
 import { initializeApp } from 'firebase-admin/app';
 import { getDatabase } from 'firebase-admin/database';
+import { Auction, ID } from './types.js';
 
-// Initialize the Firebase Admin SDK
 initializeApp();
 
-// --- Type Definitions ---
-// It's a good practice to share these types with your frontend application
-type ID = string;
+/**
+ * Assigns a room to a user and vice-versa within a given updates object.
+ * This function does not perform the database write itself; it prepares
+ * the data for an atomic update.
+ *
+ * @param updates The object accumulating database updates.
+ * @param auctionId The ID of the auction.
+ * @param userId The ID of the user.
+ * @param roomId The ID of the room.
+ */
+function assignRoomToUser(
+  updates: { [key: string]: unknown },
+  auctionId: ID,
+  userId: ID,
+  roomId: ID,
+) {
+  updates[`/auctions/${auctionId}/users/${userId}/assignedRoomId`] = roomId;
+  updates[`/auctions/${auctionId}/rooms/${roomId}/assignedUserId`] = userId;
+}
 
-type User = {
-  id: ID;
-  name: string;
-  assignedRoomId: ID | null;
-};
-
-type Room = {
-  id: ID;
-  name: string;
-  price: number;
-  assignedUserId: ID | null;
-  status?: 'bidding';
-};
-
-type Auction = {
-  id: ID;
-  totalRent: number;
-  users: User[];
-  rooms: Room[];
-  selections?: Record<string, ID>;
-};
-// --------------------
+// Type definitions are imported from './types'.
 
 export const onselectionwrite = onValueWritten(
   '/auctions/{auctionId}/selections/{userId}',
@@ -88,38 +83,29 @@ export const onselectionwrite = onValueWritten(
     logger.info('Selections grouped by room:', selectionsByRoom);
 
     // 6. Prepare a multi-path update object for atomicity
-    const updates: Record<string, unknown> = {};
+    const updates: { [key: string]: unknown } = {};
 
     // 7. Process the grouped selections
     for (const roomId in selectionsByRoom) {
       const userIds = selectionsByRoom[roomId];
-      const roomIndex = auction.rooms.findIndex((r) => r.id === roomId);
-
-      if (roomIndex === -1) {
-        logger.error(`Could not find room with ID ${roomId}. Skipping.`);
-        continue;
-      }
 
       if (userIds.length === 1) {
         // --- NO CONFLICT ---
         const userId = userIds[0];
         logger.info(`No conflict for room ${roomId}. Assigning to user ${userId}.`);
 
-        const userIndex = users.findIndex((u) => u.id === userId);
-        if (userIndex !== -1) {
-          updates[`/auctions/${auctionId}/users/${userIndex}/assignedRoomId`] = roomId;
-          updates[`/auctions/${auctionId}/rooms/${roomIndex}/assignedUserId`] = userId;
-        }
+        // Assign the room to the user
+        assignRoomToUser(updates, auctionId, userId, roomId);
       } else {
         // --- CONFLICT ---
         logger.info(`Conflict detected for room ${roomId}. Starting a bidding war.`);
-        updates[`/auctions/${auctionId}/rooms/${roomIndex}/status`] = 'bidding';
+        updates[`/auctions/${auctionId}/rooms/${roomId}/status`] = 'bidding';
         // Store which users are in the conflict for this room
         const conflictingUsers: Record<string, boolean> = {};
         userIds.forEach(id => {
           conflictingUsers[id] = true;
         });
-        updates[`/auctions/${auctionId}/rooms/${roomIndex}/conflictingUserIds`] = conflictingUsers;
+        updates[`/auctions/${auctionId}/rooms/${roomId}/conflictingUserIds`] = conflictingUsers;
       }
     }
 
@@ -128,8 +114,7 @@ export const onselectionwrite = onValueWritten(
 
     // 9. Atomically apply all updates to the database
     await getDatabase().ref().update(updates);
-
-    logger.info('Successfully processed selections and updated database.');
+    logger.info(`Processed selections for auction: ${auctionId}`);
 
     return null;
   }

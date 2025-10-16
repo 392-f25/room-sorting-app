@@ -1,6 +1,6 @@
 import { ref, push, set, onValue, off } from 'firebase/database';
 import { db } from './firebaseConfig';
-import type { Auction, CreateData, Room, User } from '../types/index';
+import type { Auction, CreateData, ID, Room, User } from '../types/index';
 
 /**
  * Creates and saves a new auction to the Firebase Realtime Database.
@@ -19,13 +19,15 @@ export const saveAuction = async (
   const roomCount = roomNames.length;
   const basePrice = totalRent / roomCount;
 
-  const newRooms: Room[] = roomNames.map((name) => {
+  const newRooms: {[key: ID]: Room} = {};
+  roomNames.forEach((name) => {
     const roomId = push(ref(db, `auctions/${newAuctionId}/rooms`)).key!;
-    return {
+    newRooms[roomId] = {
       id: roomId,
       name,
       price: basePrice,
       assignedUserId: null,
+      status: 'available',
     };
   });
 
@@ -33,7 +35,7 @@ export const saveAuction = async (
     id: newAuctionId,
     totalRent,
     rooms: newRooms,
-    users: [],
+    users: {},
   };
 
   await set(newAuctionRef, newAuction);
