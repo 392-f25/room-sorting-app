@@ -19,27 +19,26 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- DERIVE UI STATE FROM PROPS ---
-  const { phase, conflictingRooms, unassignedUsers } = useMemo(() => {
+  const { phase, conflictingRooms } = useMemo(() => {
     const usersArray = Object.values(auction.users || {});
     const roomsArray = Object.values(auction.rooms || {});
 
     const isFull = Object.keys(auction.users || {}).length >= Object.keys(auction.rooms || {}).length;
     if (!isFull) {
-      return { phase: 'waiting', conflictingRooms: [], unassignedUsers: [] };
+      return { phase: 'waiting', conflictingRooms: [] };
     }
 
     const isDone = usersArray.every(u => u.assignedRoomId);
     if (isDone) {
-      return { phase: 'done', conflictingRooms: [], unassignedUsers: [] };
+      return { phase: 'done', conflictingRooms: [] };
     }
 
     const biddingRooms = roomsArray.filter(r => (r as RoomWithStatus).status === 'bidding');
     if (biddingRooms.length > 0) {
-      return { phase: 'bid', conflictingRooms: biddingRooms, unassignedUsers: [] };
+      return { phase: 'bid', conflictingRooms: biddingRooms };
     }
 
-    const users = usersArray.filter(u => !u.assignedRoomId);
-    return { phase: 'select', conflictingRooms: [], unassignedUsers: users };
+    return { phase: 'select', conflictingRooms: [] };
   }, [auction]);
 
   // --- REALTIME SUBSCRIPTIONS ---
