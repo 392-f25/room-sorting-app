@@ -1,6 +1,6 @@
 # Firebase Realtime Database Schema (MVP)
 
-This document outlines the simplified MVP data structure for the auction application. The goal is to use the leanest possible structure that still supports the core functionality, with the understanding that it can be optimized for scale later.
+This document outlines the streamlined data structure for the multi-device room auction application. The new structure consolidates all auction data into a single `auctions` collection for better real-time synchronization and simpler client-side management.
 
 ---
 
@@ -8,104 +8,63 @@ This document outlines the simplified MVP data structure for the auction applica
 
 ```json
 {
-  "auctionDetails": {},
-  "bids": {},
-  "auctionState": {},
+  "auctions": {},
   "selections": {}
 }
 ```
 
 ---
 
-## 1. `/auctionDetails`
+## 1. `/auctions`
 
-Stores all the setup and metadata for a specific auction in a single location. For an MVP, this is simpler than splitting auction data across multiple collections.
+Stores all auction data in a single location for each auction. This consolidated approach simplifies real-time updates and reduces the number of database reads required.
 
-**Path**: `/auctionDetails/{auctionId}`
+**Path**: `/auctions/{auctionId}`
 
 **Schema**:
 ```json
 {
-  "auctionId_1": {
-    "totalRent": 2000,
-    "status": "active",
+  "auction_id_123": {
+    "total_rent": 2000,
+    "status": "waiting", // waiting | selecting | bidding | completed
     "rooms": {
-      "roomId_X": {
+      "room1": {
         "name": "Master Bedroom",
-        "basePrice": 1000
+        "cur_price": 1000,
+        "cur_assignment": null, // userId or null
+        "status": "available" // available | bidding | assigned
       },
-      "roomId_Y": {
-        "name": "Small Bedroom",
-        "basePrice": 1000
+      "room2": {
+        "name": "Small Bedroom", 
+        "cur_price": 1000,
+        "cur_assignment": null,
+        "status": "available"
       }
     },
     "users": {
-      "user_A": { "name": "Alice" },
-      "user_B": { "name": "Bob" }
-    }
-  }
-}
-```
-
----
-
-## 2. `/bids`
-
-Stores all bids for all auctions. This path is expected to receive frequent writes during an active auction. This remains essential for the MVP.
-
-**Path**: `/bids/{auctionId}/{roomId}`
-
-**Schema**:
-```json
-{
-  "auctionId_1": {
-    "roomId_Y": {
-      "user_B": 1050,
-      "user_A": 1100
-    }
-  }
-}
-```
-
----
-
-## 3. `/auctionState`
-
-Stores the live results and current state of an auction. The `assignments` object is created along with the auction and contains an entry for every room. This provides an explicit representation of each room's state (assigned or unassigned) at all times. A `status` field can be added to an assignment to indicate a bidding phase.
-
-**Path**: `/auctionState/{auctionId}`
-
-**Schema (example during bidding for roomId_Y, and at the end of an auction):**
-```json
-{
-  "auctionId_1": {
-    "assignments": {
-      "roomId_X": {
-        "userId": null,
-        "price": 900
+      "user1": {
+        "name": "Alice",
+        "cur_assignment": null, // roomId or null
+        "is_connected": true
       },
-      "roomId_Y": {
-        "userId": null,
-        "price": 1000,
-        "status": "bidding" // Added to indicate a bidding phase
+      "user2": {
+        "name": "Bob",
+        "cur_assignment": null,
+        "is_connected": true
       }
-    }
-  }
-}
-```
-
-**Schema (at the end of an auction):**
-```json
-{
-  "auctionId_1": {
-    "assignments": {
-      "roomId_X": {
-        "userId": "bob_id",
-        "price": 900
-      },
-      "roomId_Y": {
-        "userId": "alice_id",
-        "price": 1100
+    },
+    "conflicts": {
+      "room1": {
+        "bidders": {
+          "user2": {
+            "bid": 650,
+            "submitted": true
+          },
+          "user3": {
+            "bid": 675,
+            "submitted": false
+          }
+        }
       }
     }
   }
@@ -114,147 +73,216 @@ Stores the live results and current state of an auction. The `assignments` objec
 
 ---
 
-## 4. `/selections`
+## 2. `/selections`
 
-Stores the temporary room choices of users for a given round. This path is written to by the client and read by a Cloud Function to detect conflicts. It is ephemeral and can be cleared after each round of assignments.
+Stores temporary room selections during the selection phase. This is a separate collection to avoid conflicts with the main auction data during real-time updates.
 
-**Path**: `/selections/{auctionId}/{userId}`
+**Path**: `/selections/{auctionId}`
 
 **Schema**:
 ```json
 {
-  "auctionId_1": {
-    "alice_id": "roomId_Y",
-    "bob_id": "roomId_Y"
+  "auction_id_123": {
+    "user1": "room2",
+    "user2": "room1",
+    "user3": "room2"
   }
 }
 ```
 
 ---
 
-## Example Use-Case Walkthrough (MVP)
+## Status Flow
 
-This section explains how the database changes during a typical auction flow.
+The auction progresses through these statuses:
+
+1. **`waiting`** - Auction created, waiting for users to join
+2. **`selecting`** - Users are selecting their preferred rooms
+3. **`bidding`** - Conflicts detected, users are bidding on contested rooms
+4. **`completed`** - All rooms assigned, auction finished
+
+---
+
+## Example Use-Case Walkthrough
+
+This section explains how the database changes during a typical auction flow using the new structure.
 
 ### Initial State
 
-The database is an empty object.
+The database starts empty.
 ```json
 {}
 ```
 
 ### Step 1: Alice Creates the Auction
 
-Alice submits the "Create Auction" form. The `saveAuction` function generates an auction ID, and creates the initial state for the auction across all relevant collections. Note that `/auctionState/assignments` is created at the beginning with all rooms initialized.
+Alice submits the "Create Auction" form. The `saveAuction` function generates an auction ID and creates the initial auction structure.
 
 **Database State:**
 ```json
 {
-  "auctionDetails": {
-    "auctionId_1": {
-      "totalRent": 2000,
-      "status": "active",
+  "auctions": {
+    "auction_123": {
+      "total_rent": 2000,
+      "status": "waiting",
       "rooms": {
-        "roomId_X": { "name": "Master Bedroom", "basePrice": 1000 },
-        "roomId_Y": { "name": "Small Bedroom", "basePrice": 1000 }
+        "room1": {
+          "name": "Master Bedroom",
+          "cur_price": 1000,
+          "cur_assignment": null,
+          "status": "available"
+        },
+        "room2": {
+          "name": "Small Bedroom",
+          "cur_price": 1000,
+          "cur_assignment": null,
+          "status": "available"
+        }
       },
       "users": {
-        "alice_id": { "name": "Alice" },
-        "bob_id": { "name": "Bob" }
+        "user1": {
+          "name": "Alice",
+          "cur_assignment": null,
+          "is_connected": true
+        }
+      },
+      "conflicts": {}
+    }
+  }
+}
+```
+
+### Step 2: Bob Joins the Auction
+
+Bob joins using the auction URL. The `addUserToAuction` function adds him to the users list.
+
+**Database State:**
+```json
+{
+  "auctions": {
+    "auction_123": {
+      "total_rent": 2000,
+      "status": "waiting",
+      "rooms": { /* same as before */ },
+      "users": {
+        "user1": {
+          "name": "Alice",
+          "cur_assignment": null,
+          "is_connected": true
+        },
+        "user2": {
+          "name": "Bob",
+          "cur_assignment": null,
+          "is_connected": true
+        }
+      },
+      "conflicts": {}
+    }
+  }
+}
+```
+
+### Step 3: Auction Starts - Selection Phase
+
+When the auction has enough users, it transitions to the `selecting` phase. Users make their room selections.
+
+**Database State:**
+```json
+{
+  "auctions": {
+    "auction_123": {
+      "total_rent": 2000,
+      "status": "selecting",
+      "rooms": { /* same as before */ },
+      "users": { /* same as before */ },
+      "conflicts": {}
+    }
+  },
+  "selections": {
+    "auction_123": {
+      "user1": "room2",
+      "user2": "room1"
+    }
+  }
+}
+```
+
+### Step 4: Conflict Detection - Bidding Phase
+
+The system detects that both users want different rooms (no conflict in this case), but if there was a conflict, the auction would transition to `bidding` status.
+
+**Example with conflict:**
+```json
+{
+  "auctions": {
+    "auction_123": {
+      "total_rent": 2000,
+      "status": "bidding",
+      "rooms": {
+        "room1": {
+          "name": "Master Bedroom",
+          "cur_price": 1000,
+          "cur_assignment": null,
+          "status": "bidding"
+        },
+        "room2": {
+          "name": "Small Bedroom",
+          "cur_price": 1000,
+          "cur_assignment": null,
+          "status": "available"
+        }
+      },
+      "users": { /* same as before */ },
+      "conflicts": {
+        "room1": {
+          "bidders": {
+            "user1": {
+              "bid": 0,
+              "submitted": false
+            },
+            "user2": {
+              "bid": 0,
+              "submitted": false
+            }
+          }
+        }
       }
     }
   },
-  "auctionState": {
-    "auctionId_1": {
-      "assignments": {
-        "roomId_X": {
-          "userId": null,
-          "price": 1000
-        },
-        "roomId_Y": {
-          "userId": null,
-          "price": 1000
-        }
-      }
-    }
-  }
-}
-```
-
-### Step 2: Users Select Rooms (Conflict)
-
-Both Alice and Bob want the "Small Bedroom" (`roomId_Y`). The client calls the `submitSelection` function for each user.
-
-1.  Alice selects `roomId_Y`. A `WRITE` operation sets `/selections/auctionId_1/alice_id` to `"roomId_Y"`.
-2.  Bob selects `roomId_Y`. A `WRITE` operation sets `/selections/auctionId_1/bob_id` to `"roomId_Y"`.
-
-**The `/selections` tree is created:**
-```json
-{
   "selections": {
-    "auctionId_1": {
-      "alice_id": "roomId_Y",
-      "bob_id": "roomId_Y"
-    }
-  }
-}
-```
-A Cloud Function, triggered by these writes, detects that both users selected the same room, initiating a bidding round for `roomId_Y`.
-
-### Step 3: Bidding on the "Small Bedroom"
-
-The Cloud Function, after detecting the conflict, updates the `auctionState` to signal bidding. It sets the `status` of `roomId_Y` to `"bidding"`.
-
-**The `/auctionState` tree is updated (before bids are placed):**
-```json
-{
-  "auctionState": {
-    "auctionId_1": {
-      "assignments": {
-        "roomId_X": { "userId": null, "price": 1000 },
-        "roomId_Y": { "userId": null, "price": 1000, "status": "bidding" }
-      }
+    "auction_123": {
+      "user1": "room1",
+      "user2": "room1"
     }
   }
 }
 ```
 
-Bidding opens for `roomId_Y`. Alice and Bob place bids via the `placeBid` function.
+### Step 5: Bidding Process
 
-1.  Bob bids $1050. A `WRITE` operation sets `/bids/auctionId_1/roomId_Y/bob_id` to `1050`.
-2.  Alice bids $1100. A `WRITE` operation sets `/bids/auctionId_1/roomId_Y/alice_id` to `1100`.
+Users place their bids on the contested room. The system tracks both the bid amount and submission status.
 
-**The `/bids` tree is created:**
+**Database State:**
 ```json
 {
-  "bids": {
-    "auctionId_1": {
-      "roomId_Y": {
-        "bob_id": 1050,
-        "alice_id": 1100
-      }
-    }
-  }
-}
-```
-
-### Step 4: "Small Bedroom" Bidding Ends
-
-A Cloud Function determines Alice is the winner. It now **updates** the existing `/auctionState` object. The `status: "bidding"` is removed, and the room is assigned. The price of the remaining unassigned room (`roomId_X`) is recalculated (`2000 - 1100 = 900`).
-
-**The `/auctionState` tree is updated:**
-```json
-{
-  "auctionState": {
-    "auctionId_1": {
-      "assignments": {
-        "roomId_X": {
-          "userId": null,
-          "price": 900
-        },
-        "roomId_Y": {
-          "userId": "alice_id",
-          "price": 1100
+  "auctions": {
+    "auction_123": {
+      "total_rent": 2000,
+      "status": "bidding",
+      "rooms": { /* same as before */ },
+      "users": { /* same as before */ },
+      "conflicts": {
+        "room1": {
+          "bidders": {
+            "user1": {
+              "bid": 1200,
+              "submitted": true
+            },
+            "user2": {
+              "bid": 1100,
+              "submitted": true
+            }
+          }
         }
       }
     }
@@ -262,34 +290,115 @@ A Cloud Function determines Alice is the winner. It now **updates** the existing
 }
 ```
 
-### Step 5: Final Resolution
+### Step 6: Bidding Resolution
 
-Bob is automatically assigned the last remaining room. The Cloud Function updates the final assignment and changes the auction status to `closed`.
+The system determines Alice (user1) is the winner with the highest bid. The room is assigned and prices are recalculated.
+
+**Database State:**
+```json
+{
+  "auctions": {
+    "auction_123": {
+      "total_rent": 2000,
+      "status": "selecting",
+      "rooms": {
+        "room1": {
+          "name": "Master Bedroom",
+          "cur_price": 1200,
+          "cur_assignment": "user1",
+          "status": "assigned"
+        },
+        "room2": {
+          "name": "Small Bedroom",
+          "cur_price": 800,
+          "cur_assignment": null,
+          "status": "available"
+        }
+      },
+      "users": {
+        "user1": {
+          "name": "Alice",
+          "cur_assignment": "room1",
+          "is_connected": true
+        },
+        "user2": {
+          "name": "Bob",
+          "cur_assignment": null,
+          "is_connected": true
+        }
+      },
+      "conflicts": {}
+    }
+  },
+  "selections": {
+    "auction_123": {
+      "user2": "room2"
+    }
+  }
+}
+```
+
+### Step 7: Final Assignment
+
+Bob is assigned to the remaining room, and the auction is completed.
 
 **Final Database State:**
 ```json
 {
-  "auctionDetails": {
-    "auctionId_1": {
-      "status": "closed", // Status is updated
-      // ... other fields unchanged
-    }
-  },
-  "bids": { ... },
-  "selections": { ... }, // Selections may be cleared or left as-is
-  "auctionState": {
-    "auctionId_1": {
-      "assignments": {
-        "roomId_X": {
-          "userId": "bob_id",
-          "price": 900
+  "auctions": {
+    "auction_123": {
+      "total_rent": 2000,
+      "status": "completed",
+      "rooms": {
+        "room1": {
+          "name": "Master Bedroom",
+          "cur_price": 1200,
+          "cur_assignment": "user1",
+          "status": "assigned"
         },
-        "roomId_Y": {
-          "userId": "alice_id",
-          "price": 1100
+        "room2": {
+          "name": "Small Bedroom",
+          "cur_price": 800,
+          "cur_assignment": "user2",
+          "status": "assigned"
         }
-      }
+      },
+      "users": {
+        "user1": {
+          "name": "Alice",
+          "cur_assignment": "room1",
+          "is_connected": true
+        },
+        "user2": {
+          "name": "Bob",
+          "cur_assignment": "room2",
+          "is_connected": true
+        }
+      },
+      "conflicts": {}
     }
   }
 }
 ```
+
+---
+
+## Key Benefits of New Structure
+
+1. **Simplified Real-time Updates**: All auction data is in one location, making it easier to sync across devices
+2. **Reduced Database Reads**: Clients only need to listen to one main path per auction
+3. **Better Conflict Management**: Conflicts are tracked within the auction object
+4. **Cleaner Status Management**: Single status field controls the entire auction flow
+5. **Easier Debugging**: All related data is co-located for easier troubleshooting
+
+---
+
+## Client-Side Implementation Notes
+
+- Clients subscribe to `/auctions/{auctionId}` for real-time updates
+- Selections are managed separately in `/selections/{auctionId}` to avoid conflicts
+- The `is_connected` field helps track which users are currently active
+- The `status` field on rooms indicates their current state (available, bidding, assigned)
+- Bid submission status is tracked to ensure all users have submitted before resolution
+
+
