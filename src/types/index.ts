@@ -3,14 +3,14 @@ export type ID = string;
 export type User = {
   id: ID;
   name: string;
-  assignedRoomId?: ID;
+  assignedRoomId: ID | null;
 };
 
 export type Room = {
   id: ID;
   name: string;
   price: number;
-  assignedUserId?: ID;
+  assignedUserId: ID | null;
 };
 
 export type Auction = {

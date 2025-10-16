@@ -13,7 +13,6 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
   const [bidInputs, setBidInputs] = useState<Record<string, number>>({});
   const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submittedSelection, setSubmittedSelection] = useState<string | null>(null);
 
   // --- DERIVE UI STATE FROM PROPS ---
   const { phase, conflictingRooms, unassignedUsers } = useMemo(() => {
@@ -38,15 +37,13 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
 
   // --- REALTIME SUBSCRIPTIONS ---
 
-  // Reset submitted status when a new round starts
-  useEffect(() => {
-    setSubmittedSelection(null);
-  }, [phase]);
-
   // Listen to real-time selections from other users
   useEffect(() => {
-    if (phase !== 'select') return;
-    const selectionsRef = ref(db, `/selections/${auction.id}`);
+    if (phase !== 'select') {
+      setRealtimeSelections({}); // Clear selections when not in select phase
+      return;
+    }
+    const selectionsRef = ref(db, `auctions/${auction.id}/selections`);
     const listener = onValue(selectionsRef, (snapshot) => {
       setRealtimeSelections(snapshot.val() ?? {});
     });
@@ -64,7 +61,6 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
     setIsSubmitting(true);
     try {
       await submitSelection(auction.id, currentUserId, userSelection);
-      setSubmittedSelection(userSelection); // Lock the UI for this round
     } catch (error) {
       console.error("Failed to submit selection:", error);
     } finally {
@@ -84,7 +80,7 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const hasSubmitted = !!submittedSelection;
+  const hasSubmitted = realtimeSelections.hasOwnProperty(currentUserId);
 
   return (
     <div className='bg-white p-6 rounded shadow'>
