@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { ref, onValue, off } from 'firebase/database';
 import { db } from '../utilities/firebaseConfig';
 import type { Auction, Room } from '../types';
-import { placeBid, submitSelection } from '../utilities/auction-client';
+import { placeBid, submitSelection, startAuction } from '../utilities/auction-client';
 
 export const AuctionView = ({ auction, currentUserId }: { auction: Auction, currentUserId: string }) => {
   const users = useMemo(() => Object.values(auction.users || {}).map((u, i) => ({ ...u, id: Object.keys(auction.users)[i] })), [auction.users]);
@@ -101,6 +101,14 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
           <p className='text-slate-600 mb-4'>
             {users.length} of {rooms.length} spots filled.
           </p>
+          {users.length === rooms.length && (
+            <button
+              className='bg-green-600 text-white px-4 py-2 rounded mb-4'
+              onClick={() => startAuction(auction.id)}
+            >
+              Start Auction
+            </button>
+          )}
           <div className='mb-6'>
             <h4 className='font-semibold mb-2'>Who's here:</h4>
             <ul className='space-y-1'>

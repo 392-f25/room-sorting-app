@@ -122,3 +122,11 @@ export const submitSelection = async (auctionId: string, userId: string, roomId:
   const selectionRef = ref(db, `/selections/${auctionId}/${userId}`);
   return set(selectionRef, roomId);
 };
+
+/**
+ * Starts the auction by updating its status to 'selecting'.
+ */
+export const startAuction = async (auctionId: string): Promise<void> => {
+  const statusRef = ref(db, `/auctions/${auctionId}/status`);
+  return set(statusRef, 'selecting');
+};
