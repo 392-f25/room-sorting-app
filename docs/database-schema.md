@@ -1,140 +1,92 @@
-# Firebase Realtime Database Schema (MVP)
+# Firebase Realtime Database Schema (Refactored)
 
-This document outlines the simplified MVP data structure for the auction application. The goal is to use the leanest possible structure that still supports the core functionality, with the understanding that it can be optimized for scale later.
+This document outlines the refactored data structure for the auction application. The schema has been consolidated to improve data locality, simplify security rules, and make database operations more efficient.
 
 ---
 
 ## Root Level Structure
 
+The root now contains a single primary node for all auction-related data.
+
 ```json
 {
-  "auctionDetails": {},
-  "bids": {},
-  "auctionState": {},
-  "selections": {}
+  "auctions": {}
 }
 ```
 
 ---
 
-## 1. `/auctionDetails`
+## 1. `/auctions`
 
-Stores all the setup and metadata for a specific auction in a single location. For an MVP, this is simpler than splitting auction data across multiple collections.
+This is the single source of truth for each auction. It stores all static metadata, dynamic state, and ephemeral data like bids and selections, under a single parent key.
 
-**Path**: `/auctionDetails/{auctionId}`
+**Path**: `/auctions/{auctionId}`
 
 **Schema**:
 ```json
 {
   "auctionId_1": {
+    "id": "auctionId_1",
     "totalRent": 2000,
-    "status": "active",
-    "rooms": {
-      "roomId_X": {
+    "status": "active", // "active", "bidding", "done"
+    "rooms": [
+      {
+        "id": "roomId_X",
         "name": "Master Bedroom",
-        "basePrice": 1000
-      },
-      "roomId_Y": {
-        "name": "Small Bedroom",
-        "basePrice": 1000
-      }
-    },
-    "users": {
-      "user_A": { "name": "Alice" },
-      "user_B": { "name": "Bob" }
-    }
-  }
-}
-```
-
----
-
-## 2. `/bids`
-
-Stores all bids for all auctions. This path is expected to receive frequent writes during an active auction. This remains essential for the MVP.
-
-**Path**: `/bids/{auctionId}/{roomId}`
-
-**Schema**:
-```json
-{
-  "auctionId_1": {
-    "roomId_Y": {
-      "user_B": 1050,
-      "user_A": 1100
-    }
-  }
-}
-```
-
----
-
-## 3. `/auctionState`
-
-Stores the live results and current state of an auction. The `assignments` object is created along with the auction and contains an entry for every room. This provides an explicit representation of each room's state (assigned or unassigned) at all times. A `status` field can be added to an assignment to indicate a bidding phase.
-
-**Path**: `/auctionState/{auctionId}`
-
-**Schema (example during bidding for roomId_Y, and at the end of an auction):**
-```json
-{
-  "auctionId_1": {
-    "assignments": {
-      "roomId_X": {
-        "userId": null,
-        "price": 900
-      },
-      "roomId_Y": {
-        "userId": null,
         "price": 1000,
-        "status": "bidding" // Added to indicate a bidding phase
-      }
-    }
-  }
-}
-```
-
-**Schema (at the end of an auction):**
-```json
-{
-  "auctionId_1": {
-    "assignments": {
-      "roomId_X": {
-        "userId": "bob_id",
-        "price": 900
+        "assignedUserId": null
       },
+      {
+        "id": "roomId_Y",
+        "name": "Small Bedroom",
+        "price": 1000,
+        "assignedUserId": null,
+        "status": "bidding" // Optional status for the room itself
+      }
+    ],
+    "users": [
+      {
+        "id": "user_A",
+        "name": "Alice",
+        "assignedRoomId": null
+      },
+      {
+        "id": "user_B",
+        "name": "Bob",
+        "assignedRoomId": null
+      }
+    ],
+    "selections": {
+      "user_A": "roomId_Y",
+      "user_B": "roomId_Y"
+    },
+    "bidding": {
       "roomId_Y": {
-        "userId": "alice_id",
-        "price": 1100
+        "user_A": 1100,
+        "user_B": 1050
       }
     }
   }
 }
 ```
 
----
+### Sub-nodes within an Auction
 
-## 4. `/selections`
+*   **/auctions/{auctionId}/selections**: Stores temporary room choices for a round.
+    *   **Path**: `/auctions/{auctionId}/selections/{userId}`
+    *   **Schema**: `{ "user_A": "roomId_Y" }`
+    *   **Purpose**: Read by a Cloud Function to resolve selection rounds. It is cleared after each round.
 
-Stores the temporary room choices of users for a given round. This path is written to by the client and read by a Cloud Function to detect conflicts. It is ephemeral and can be cleared after each round of assignments.
-
-**Path**: `/selections/{auctionId}/{userId}`
-
-**Schema**:
-```json
-{
-  "auctionId_1": {
-    "alice_id": "roomId_Y",
-    "bob_id": "roomId_Y"
-  }
-}
-```
+*   **/auctions/{auctionId}/bidding**: Stores all bids for contested rooms within an auction.
+    *   **Path**: `/auctions/{auctionId}/bidding/{roomId}/{userId}`
+    *   **Schema**: `{ "user_A": 1100 }`
+    *   **Purpose**: Stores active bids during a bidding phase.
 
 ---
 
-## Example Use-Case Walkthrough (MVP)
+## Example Use-Case Walkthrough (Refactored)
 
-This section explains how the database changes during a typical auction flow.
+This section explains how the database changes during a typical auction flow with the new schema.
 
 ### Initial State
 
@@ -145,151 +97,111 @@ The database is an empty object.
 
 ### Step 1: Alice Creates the Auction
 
-Alice submits the "Create Auction" form. The `saveAuction` function generates an auction ID, and creates the initial state for the auction across all relevant collections. Note that `/auctionState/assignments` is created at the beginning with all rooms initialized.
+Alice submits the "Create Auction" form. The `saveAuction` function generates an auction ID and creates a single, complete auction object.
 
 **Database State:**
 ```json
 {
-  "auctionDetails": {
+  "auctions": {
     "auctionId_1": {
+      "id": "auctionId_1",
       "totalRent": 2000,
-      "status": "active",
-      "rooms": {
-        "roomId_X": { "name": "Master Bedroom", "basePrice": 1000 },
-        "roomId_Y": { "name": "Small Bedroom", "basePrice": 1000 }
-      },
-      "users": {
-        "alice_id": { "name": "Alice" },
-        "bob_id": { "name": "Bob" }
-      }
-    }
-  },
-  "auctionState": {
-    "auctionId_1": {
-      "assignments": {
-        "roomId_X": {
-          "userId": null,
-          "price": 1000
-        },
-        "roomId_Y": {
-          "userId": null,
-          "price": 1000
-        }
-      }
+      "users": [],
+      "rooms": [
+        { "id": "roomId_X", "name": "Master Bedroom", "price": 1000, "assignedUserId": null },
+        { "id": "roomId_Y", "name": "Small Bedroom", "price": 1000, "assignedUserId": null }
+      ]
     }
   }
 }
 ```
 
-### Step 2: Users Select Rooms (Conflict)
+### Step 2: Users Join the Auction
+
+Alice and Bob join the auction. The `addUserToAuction` function pushes new user objects to the `users` array for the auction.
+
+**Database State (`/auctions/auctionId_1`):**
+```json
+{
+  // ... other auction data
+  "users": [
+    { "id": "user_A", "name": "Alice", "assignedRoomId": null },
+    { "id": "user_B", "name": "Bob", "assignedRoomId": null }
+  ]
+}
+```
+
+### Step 3: Users Select Rooms (Conflict)
 
 Both Alice and Bob want the "Small Bedroom" (`roomId_Y`). The client calls the `submitSelection` function for each user.
 
-1.  Alice selects `roomId_Y`. A `WRITE` operation sets `/selections/auctionId_1/alice_id` to `"roomId_Y"`.
-2.  Bob selects `roomId_Y`. A `WRITE` operation sets `/selections/auctionId_1/bob_id` to `"roomId_Y"`.
+1.  Alice selects `roomId_Y`. A `WRITE` operation sets `/auctions/auctionId_1/selections/user_A` to `"roomId_Y"`.
+2.  Bob selects `roomId_Y`. A `WRITE` operation sets `/auctions/auctionId_1/selections/user_B` to `"roomId_Y"`.
 
-**The `/selections` tree is created:**
+**The `/auctions/auctionId_1/selections` tree is created:**
 ```json
 {
   "selections": {
-    "auctionId_1": {
-      "alice_id": "roomId_Y",
-      "bob_id": "roomId_Y"
-    }
+    "user_A": "roomId_Y",
+    "user_B": "roomId_Y"
   }
 }
 ```
-A Cloud Function, triggered by these writes, detects that both users selected the same room, initiating a bidding round for `roomId_Y`.
+A Cloud Function, triggered by these writes, detects the conflict and initiates a bidding round.
 
-### Step 3: Bidding on the "Small Bedroom"
+### Step 4: Bidding on the "Small Bedroom"
 
-The Cloud Function, after detecting the conflict, updates the `auctionState` to signal bidding. It sets the `status` of `roomId_Y` to `"bidding"`.
+The Cloud Function updates the auction object to signal bidding. It sets the `status` of `roomId_Y` to `"bidding"`.
 
-**The `/auctionState` tree is updated (before bids are placed):**
+**The `/auctions/auctionId_1/rooms` array is updated:**
 ```json
-{
-  "auctionState": {
-    "auctionId_1": {
-      "assignments": {
-        "roomId_X": { "userId": null, "price": 1000 },
-        "roomId_Y": { "userId": null, "price": 1000, "status": "bidding" }
-      }
-    }
-  }
-}
+"rooms": [
+  { "id": "roomId_X", "name": "Master Bedroom", "price": 1000, "assignedUserId": null },
+  { "id": "roomId_Y", "name": "Small Bedroom", "price": 1000, "assignedUserId": null, "status": "bidding" }
+]
 ```
 
-Bidding opens for `roomId_Y`. Alice and Bob place bids via the `placeBid` function.
+Bidding opens. Alice and Bob place bids via the `placeBid` function.
 
-1.  Bob bids $1050. A `WRITE` operation sets `/bids/auctionId_1/roomId_Y/bob_id` to `1050`.
-2.  Alice bids $1100. A `WRITE` operation sets `/bids/auctionId_1/roomId_Y/alice_id` to `1100`.
+1.  Bob bids $1050. A `WRITE` sets `/auctions/auctionId_1/bidding/roomId_Y/user_B` to `1050`.
+2.  Alice bids $1100. A `WRITE` sets `/auctions/auctionId_1/bidding/roomId_Y/user_A` to `1100`.
 
-**The `/bids` tree is created:**
+**The `/auctions/auctionId_1/bidding` tree is created:**
 ```json
 {
-  "bids": {
-    "auctionId_1": {
-      "roomId_Y": {
-        "bob_id": 1050,
-        "alice_id": 1100
-      }
+  "bidding": {
+    "roomId_Y": {
+      "user_B": 1050,
+      "user_A": 1100
     }
   }
 }
 ```
 
-### Step 4: "Small Bedroom" Bidding Ends
+### Step 5: Bidding Ends & Final Resolution
 
-A Cloud Function determines Alice is the winner. It now **updates** the existing `/auctionState` object. The `status: "bidding"` is removed, and the room is assigned. The price of the remaining unassigned room (`roomId_X`) is recalculated (`2000 - 1100 = 900`).
+A Cloud Function determines Alice is the winner. It performs a multi-path update:
+1.  Assigns `roomId_Y` to Alice (`user_A`).
+2.  Recalculates the price of the remaining room (`roomId_X`) to `900`.
+3.  Automatically assigns the last room to Bob (`user_B`).
+4.  Clears the `selections` and `bidding` nodes.
+5.  Updates the auction `status` to `"done"`.
 
-**The `/auctionState` tree is updated:**
+**Final Database State (`/auctions/auctionId_1`):**
 ```json
 {
-  "auctionState": {
-    "auctionId_1": {
-      "assignments": {
-        "roomId_X": {
-          "userId": null,
-          "price": 900
-        },
-        "roomId_Y": {
-          "userId": "alice_id",
-          "price": 1100
-        }
-      }
-    }
-  }
-}
-```
-
-### Step 5: Final Resolution
-
-Bob is automatically assigned the last remaining room. The Cloud Function updates the final assignment and changes the auction status to `closed`.
-
-**Final Database State:**
-```json
-{
-  "auctionDetails": {
-    "auctionId_1": {
-      "status": "closed", // Status is updated
-      // ... other fields unchanged
-    }
-  },
-  "bids": { ... },
-  "selections": { ... }, // Selections may be cleared or left as-is
-  "auctionState": {
-    "auctionId_1": {
-      "assignments": {
-        "roomId_X": {
-          "userId": "bob_id",
-          "price": 900
-        },
-        "roomId_Y": {
-          "userId": "alice_id",
-          "price": 1100
-        }
-      }
-    }
-  }
+  "id": "auctionId_1",
+  "totalRent": 2000,
+  "status": "done",
+  "rooms": [
+    { "id": "roomId_X", "name": "Master Bedroom", "price": 900, "assignedUserId": "user_B" },
+    { "id": "roomId_Y", "name": "Small Bedroom", "price": 1100, "assignedUserId": "user_A" }
+  ],
+  "users": [
+    { "id": "user_A", "name": "Alice", "assignedRoomId": "roomId_Y" },
+    { "id": "user_B", "name": "Bob", "assignedRoomId": "roomId_X" }
+  ],
+  "selections": null, // Node is cleared
+  "bidding": null     // Node is cleared
 }
 ```

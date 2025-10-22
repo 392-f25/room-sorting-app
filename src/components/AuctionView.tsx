@@ -5,53 +5,71 @@ import type { Auction } from '../types';
 import { placeBid, submitSelection } from '../utilities/auction-client';
 
 // A helper type to include the status from our assumed backend logic
-type RoomWithStatus = Auction['rooms'][0] & { status?: string };
+type RoomWithStatus = Auction['rooms'][0] & {
+  status?: string;
+  conflictingUserIds?: {[key: string]: true};
+};
 
 export const AuctionView = ({ auction, currentUserId }: { auction: Auction, currentUserId: string }) => {
-  const [selections, setSelections] = useState<Record<string, string | null>>(() => Object.fromEntries(auction.users.map(u => [u.id, null])));
+  const [selections, setSelections] = useState<Record<string, string | null>>(() => Object.fromEntries(Object.keys(auction.users || {}).map(uid => [uid, null])));
   const [realtimeSelections, setRealtimeSelections] = useState<Record<string, string>>({});
-  const [bidInputs, setBidInputs] = useState<Record<string, number>>({});
+  const [realtimeBids, setRealtimeBids] = useState<Record<string, Record<string, number>>>({});
+  const [bidInputs, setBidInputs] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submittedSelection, setSubmittedSelection] = useState<string | null>(null);
 
   // --- DERIVE UI STATE FROM PROPS ---
-  const { phase, conflictingRooms, unassignedUsers } = useMemo(() => {
-    const isFull = auction.users.length >= auction.rooms.length;
+  const { phase, conflictingRooms } = useMemo(() => {
+    const usersArray = Object.values(auction.users || {});
+    const roomsArray = Object.values(auction.rooms || {});
+
+    const isFull = Object.keys(auction.users || {}).length >= Object.keys(auction.rooms || {}).length;
     if (!isFull) {
-      return { phase: 'waiting', conflictingRooms: [], unassignedUsers: [] };
+      return { phase: 'waiting', conflictingRooms: [] };
     }
 
-    const isDone = auction.users.every(u => u.assignedRoomId);
+    const isDone = usersArray.every(u => u.assignedRoomId);
     if (isDone) {
-      return { phase: 'done', conflictingRooms: [], unassignedUsers: [] };
+      return { phase: 'done', conflictingRooms: [] };
     }
 
-    const biddingRooms = auction.rooms.filter(r => (r as RoomWithStatus).status === 'bidding');
+    const biddingRooms = roomsArray.filter(r => (r as RoomWithStatus).status === 'bidding');
     if (biddingRooms.length > 0) {
-      return { phase: 'bid', conflictingRooms: biddingRooms, unassignedUsers: [] };
+      return { phase: 'bid', conflictingRooms: biddingRooms };
     }
 
-    const users = auction.users.filter(u => !u.assignedRoomId);
-    return { phase: 'select', conflictingRooms: [], unassignedUsers: users };
+    return { phase: 'select', conflictingRooms: [] };
   }, [auction]);
 
   // --- REALTIME SUBSCRIPTIONS ---
 
-  // Reset submitted status when a new round starts
-  useEffect(() => {
-    setSubmittedSelection(null);
-  }, [phase]);
-
   // Listen to real-time selections from other users
   useEffect(() => {
-    if (phase !== 'select') return;
-    const selectionsRef = ref(db, `/selections/${auction.id}`);
+    if (phase !== 'select') {
+      setRealtimeSelections({}); // Clear selections when not in select phase
+      return;
+    }
+    const selectionsRef = ref(db, `auctions/${auction.id}/selections`);
     const listener = onValue(selectionsRef, (snapshot) => {
       setRealtimeSelections(snapshot.val() ?? {});
     });
 
     return () => off(selectionsRef, 'value', listener);
+  }, [auction.id, phase]);
+
+  // Listen to real-time bids from other users
+  useEffect(() => {
+    if (phase !== 'bid') {
+      setRealtimeBids({});
+      setBidInputs({}); // Clear bid inputs when not in bid phase
+      return;
+    }
+    const biddingRef = ref(db, `auctions/${auction.id}/bidding`);
+    const listener = onValue(biddingRef, (snapshot) => {
+      setRealtimeBids(snapshot.val() ?? {});
+    });
+
+    return () => off(biddingRef, 'value', listener);
   }, [auction.id, phase]);
 
 
@@ -64,7 +82,6 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
     setIsSubmitting(true);
     try {
       await submitSelection(auction.id, currentUserId, userSelection);
-      setSubmittedSelection(userSelection); // Lock the UI for this round
     } catch (error) {
       console.error("Failed to submit selection:", error);
     } finally {
@@ -73,8 +90,35 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
   };
 
   const handleBid = (roomId: string) => {
-    const amount = Number(bidInputs[`${roomId}:${currentUserId}`] ?? 0);
-    if (amount <= 0 || amount >= auction.totalRent) return;
+    const amount = Number(bidInputs[`${roomId}:${currentUserId}`] ?? '');
+    const room = auction.rooms[roomId];
+
+    if (!room) {
+      alert('An error occurred: Room not found.');
+      return;
+    }
+
+    if (isNaN(amount)) {
+      alert('Please enter a valid bid amount.');
+      return;
+    }
+
+    // Your bid must be at least the current price.
+    if (amount < room.price) {
+      alert(
+        `Your bid must be at least the current room price of $${room.price.toFixed(
+          2,
+        )}`,
+      );
+      return;
+    }
+
+    // If the room price is negative, you can't bid a positive amount.
+    if (room.price < 0 && amount > 0) {
+      alert('For rooms with a negative price, your bid cannot be positive.');
+      return;
+    }
+
     placeBid(auction.id, roomId, currentUserId, amount);
   };
 
@@ -84,7 +128,7 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const hasSubmitted = !!submittedSelection;
+  const hasSubmitted = realtimeSelections.hasOwnProperty(currentUserId);
 
   return (
     <div className='bg-white p-6 rounded shadow'>
@@ -93,11 +137,11 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
       {phase !== 'waiting' && (
         <div className='mb-4'>
           <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
-            {auction.rooms.map(r => (
+            {Object.values(auction.rooms || {}).map(r => (
               <div key={r.id} className='p-3 border rounded'>
                 <div className='text-lg font-medium'>{r.name}</div>
                 <div className='text-sm text-slate-600'>Price: ${r.price.toFixed(2)}</div>
-                <div className='text-sm text-slate-600'>Assigned: {r.assignedUserId ? (auction.users.find(u => u.id === r.assignedUserId)?.name ?? r.assignedUserId) : 'None'}</div>
+                <div className='text-sm text-slate-600'>Assigned: {r.assignedUserId ? (auction.users[r.assignedUserId]?.name ?? r.assignedUserId) : 'None'}</div>
                 {(r as RoomWithStatus).status === 'bidding' && <div className='text-sm font-bold text-blue-600'>Bidding Now</div>}
               </div>
             ))}
@@ -109,12 +153,12 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
         <div className='text-center'>
           <h3 className='text-xl font-semibold mb-2'>Waiting for participants...</h3>
           <p className='text-slate-600 mb-4'>
-            {auction.users.length} of {auction.rooms.length} spots filled.
+            {Object.keys(auction.users || {}).length} of {Object.keys(auction.rooms || {}).length} spots filled.
           </p>
           <div className='mb-6'>
             <h4 className='font-semibold mb-2'>Who's here:</h4>
             <ul className='space-y-1'>
-              {auction.users.map(u => <li key={u.id}>{u.name}</li>)}
+              {Object.values(auction.users || {}).map(u => <li key={u.id}>{u.name}</li>)}
             </ul>
           </div>
           <div>
@@ -133,9 +177,23 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
         <div>
           <h3 className='font-semibold mb-2'>Select your preferred room</h3>
           <div className='space-y-4'>
-            {unassignedUsers.map(user => {
+            {Object.values(auction.users || {}).map(user => {
+              // User is already assigned a room
+              if (user.assignedRoomId) {
+                const assignedRoom = auction.rooms[user.assignedRoomId];
+                return (
+                  <div key={user.id} className='flex items-center gap-3 p-2 rounded bg-slate-100'>
+                    <div className='w-28'>{user.name} {user.id === currentUserId && '(You)'}</div>
+                    <div className='text-slate-600 font-medium'>
+                      ✓ Assigned: {assignedRoom?.name ?? '...'}
+                    </div>
+                  </div>
+                );
+              }
+
+              // User is not assigned, show selection UI
               const otherUserSelectionId = realtimeSelections[user.id];
-              const otherUserSelectionName = otherUserSelectionId ? auction.rooms.find(r => r.id === otherUserSelectionId)?.name : null;
+              const otherUserSelectionName = otherUserSelectionId ? auction.rooms[otherUserSelectionId]?.name : null;
 
               return (
                 <div key={user.id} className={`flex items-center gap-3 p-2 rounded ${user.id === currentUserId ? 'bg-blue-50' : ''}`}>
@@ -148,9 +206,15 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
                       disabled={isSubmitting || hasSubmitted}
                     >
                       <option value=''>-- choose --</option>
-                      {auction.rooms.filter(r => !r.assignedUserId).map(r => (
-                        <option key={r.id} value={r.id}>{r.name} (${r.price.toFixed(2)})</option>
-                      ))}
+                      {Object.values(auction.rooms || {}).map(r => {
+                        const occupant = r.assignedUserId ? auction.users[r.assignedUserId] : null;
+                        const displayText = occupant
+                          ? `${r.name} ($${r.price.toFixed(2)}) - Occupied by ${occupant.name}`
+                          : `${r.name} ($${r.price.toFixed(2)})`;
+                        return (
+                          <option key={r.id} value={r.id}>{displayText}</option>
+                        );
+                      })}
                     </select>
                   ) : (
                     <div className='text-slate-500'>
@@ -161,41 +225,66 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
               );
             })}
           </div>
-          <div className='mt-4'>
-            <button
-              className='bg-green-600 text-white px-4 py-2 rounded disabled:bg-slate-400'
-              onClick={handleSelections}
-              disabled={isSubmitting || hasSubmitted}
-            >
-              {isSubmitting ? 'Submitting...' : hasSubmitted ? 'Submitted' : 'Submit Selection'}
-            </button>
-          </div>
+          {!auction.users[currentUserId]?.assignedRoomId && (
+            <div className='mt-4'>
+              <button
+                className='bg-green-600 text-white px-4 py-2 rounded disabled:bg-slate-400'
+                onClick={handleSelections}
+                disabled={isSubmitting || hasSubmitted}
+              >
+                {isSubmitting ? 'Submitting...' : hasSubmitted ? 'Submitted' : 'Submit Selection'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
       {phase === 'bid' && (
         <div>
           <h3 className='font-semibold mb-2'>Bidding phase</h3>
-          {conflictingRooms.map(room => (
-            <div key={room.id} className='mb-4 border p-3 rounded'>
-              <div className='font-medium'>Room: {room.name}</div>
-              <div className='space-y-2 mt-2'>
-                {auction.users.filter(u => !u.assignedRoomId).map(user => (
-                   <div key={user.id} className={`flex items-center gap-2 p-2 rounded ${user.id === currentUserId ? 'bg-blue-50' : ''}`}>
-                     <div className='w-28'>{user.name} {user.id === currentUserId && '(You)'}</div>
-                     {user.id === currentUserId ? (
-                        <>
-                          <input className='p-2 border rounded' type='number' min='1' step='1' value={bidInputs[`${room.id}:${user.id}`] ?? ''} onChange={(e) => setBidInputs(prev => ({ ...prev, [`${room.id}:${user.id}`]: Number(e.target.value) }))} />
-                          <button className='px-2 py-1 bg-blue-600 text-white rounded' onClick={() => handleBid(room.id)}>Submit Bid</button>
-                        </>
-                     ) : (
-                      <div className='text-slate-500'><i>Bidding...</i></div>
-                     )}
-                   </div>
-                ))}
+          {conflictingRooms.map(room => {
+            const usersInConflict = Object.values(auction.users || {}).filter(u => room.conflictingUserIds?.[u.id]);
+
+            return (
+              <div key={room.id} className='mb-4 border p-3 rounded'>
+                <div className='font-medium'>Room: {room.name}</div>
+                <div className='space-y-2 mt-2'>
+                  {usersInConflict.map(user => {
+                    const hasUserBid = realtimeBids[room.id]?.[user.id] !== undefined;
+
+                    return (
+                     <div key={user.id} className={`flex items-center gap-2 p-2 rounded ${user.id === currentUserId ? 'bg-blue-50' : ''}`}>
+                       <div className='w-28'>{user.name} {user.id === currentUserId && '(You)'}</div>
+                       {user.id === currentUserId ? (
+                          <>
+                            <input
+                              className='p-2 border rounded'
+                              type='number'
+                              step='1'
+                              value={bidInputs[`${room.id}:${user.id}`] ?? ''}
+                              onChange={(e) => setBidInputs(prev => ({ ...prev, [`${room.id}:${user.id}`]: e.target.value }))}
+                              disabled={hasUserBid}
+                            />
+                            <button
+                              className='px-2 py-1 bg-blue-600 text-white rounded disabled:bg-slate-400'
+                              onClick={() => handleBid(room.id)}
+                              disabled={hasUserBid}
+                            >
+                              {hasUserBid ? 'Submitted' : 'Submit Bid'}
+                            </button>
+                          </>
+                       ) : (
+                        <div className='text-slate-500'>
+                          {hasUserBid ? <em>Bid Submitted</em> : <i>Bidding...</i>}
+                        </div>
+                       )}
+                     </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -203,8 +292,8 @@ export const AuctionView = ({ auction, currentUserId }: { auction: Auction, curr
         <div>
           <h3 className='font-semibold mb-2'>Auction Complete</h3>
           <ul>
-            {auction.users.map(u => (
-              <li key={u.id}>{u.name}: {auction.rooms.find(r => r.id === u.assignedRoomId)?.name ?? 'None'} - ${auction.rooms.find(r => r.id === u.assignedRoomId)?.price.toFixed(2) ?? '0.00'}</li>
+            {Object.values(auction.users || {}).map(u => (
+              <li key={u.id}>{u.name}: {u.assignedRoomId ? auction.rooms[u.assignedRoomId]?.name : 'None'} - ${u.assignedRoomId ? auction.rooms[u.assignedRoomId]?.price.toFixed(2) : '0.00'}</li>
             ))}
           </ul>
         </div>
