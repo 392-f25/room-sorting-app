@@ -41,19 +41,24 @@ export const AuctionCreator = ({ onCreate }: PropsWithChildren<{ onCreate: (data
 
   return (
     <div className='bg-white p-6 rounded shadow'>
-      <label className='block mb-2'>Total Rent</label>
-      <input className='w-full mb-4 p-2 border rounded' type='number' value={totalRent} onChange={(e) => setTotalRent(e.target.value)} />
+      <label className='block mb-2'>
+        Total Rent
+        <input className='w-full mb-4 p-2 border rounded' type='number' value={totalRent} onChange={(e) => setTotalRent(e.target.value)} />
+      </label>
 
       <label className='block mb-2'>Number of Rooms</label>
       <input className='w-24 mb-4 p-2 border rounded' type='number' min={1} max={10} value={count} onChange={(e) => setCount(e.target.value)} />
 
       <div>
-        <div className='font-semibold mb-2'>Room Names</div>
-        <div className='space-y-2'>
-          {Array.from({ length: Number(count) || 0 }).map((_, i) => (
-            <input key={i} className='w-full p-2 border rounded' value={roomNames[i] ?? ''} onChange={(e) => updateRoomName(i, e.target.value)} />
-          ))}
-        </div>
+        <label>
+          Room Name
+          <div className='font-semibold mb-2'>Room Names</div>
+          <div className='space-y-2'>
+            {Array.from({ length: Number(count) || 0 }).map((_, i) => (
+              <input key={i} className='w-full p-2 border rounded' value={roomNames[i] ?? ''} onChange={(e) => updateRoomName(i, e.target.value)} />
+            ))}
+          </div>
+        </label>
       </div>
 
       <button
