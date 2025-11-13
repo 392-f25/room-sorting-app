@@ -5,6 +5,9 @@
 .idea
 **/node_modules/*
 **/.firebaserc
+functions
+public
+room-sorting-functions
 
 ### Firebase Patch ###
 .runtimeconfig.json
