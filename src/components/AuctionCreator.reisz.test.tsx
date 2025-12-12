@@ -27,4 +27,15 @@ describe('user tries to create a room', () => {
         expect(await screen.findByText(/Please enter names for all rooms./)).toBeInTheDocument();
         expect(onCreate).not.toHaveBeenCalled(); 
     });
+
+    it('should call onCreate when all information is provided and is valid', async () => {
+        const onCreate = vi.fn()
+
+        render(<AuctionCreator onCreate={onCreate}/>);
+        const input = screen.getByLabelText('Total Rent');
+        await userEvent.type(input, "1")
+
+        screen.getByText("Create Auction").click()
+        expect(onCreate).toHaveBeenCalled(); 
+    });
 });
