@@ -7,6 +7,7 @@ vi.mock('firebase/database', async (importOriginal) => {
 
   return {
     ...actual,
+    getDatabase: vi.fn(),
     push: pushMock,
     ref: vi.fn(),
     set: vi.fn().mockResolvedValue(undefined),
